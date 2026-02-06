@@ -1,29 +1,18 @@
-import { create } from 'zustand';
-import { supabase } from '../../lib/supabase';
+import { create } from 'zustand'
+import { Profile } from '@/lib/supabase'
 
 interface AuthState {
-  user: any | null;
-  isAdmin: boolean;
-  isLoading: boolean;
-  setUser: (user: any) => void;
-  signOut: () => Promise<void>;
+  user: Profile | null
+  setUser: (user: Profile | null) => void
+  logout: () => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  isAdmin: false,
-  isLoading: true,
-  setUser: (user) => {
-    const adminEmail = "tournamentsakamao@gmail.com";
-    set({ 
-      user, 
-      isAdmin: user?.email === adminEmail, 
-      isLoading: false 
-    });
+  setUser: (user) => set({ user }),
+  logout: () => {
+    localStorage.removeItem('userId')
+    set({ user: null })
+    window.location.href = '/login'
   },
-  signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, isAdmin: false, isLoading: false });
-  },
-}));
-
+}))
