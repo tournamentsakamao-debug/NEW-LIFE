@@ -1,108 +1,99 @@
 "use client";
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAudio } from '@/context/AudioContext';
-import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 
-export default function LoginPage() {
-  const { playTap, playTouchEffect } = useAudio();
+export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAuth = async () => {
     setLoading(true);
-    playTap();
+    // User friendly username to email conversion for Supabase
+    const fakeEmail = `${username.toLowerCase()}@admins-tournament.com`;
 
     if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) alert(error.message);
+      const { error } = await supabase.auth.signInWithPassword({
+        email: fakeEmail,
+        password: password,
+      });
+      if (error) alert("Invalid Credentials!");
       else router.push('/dashboard');
     } else {
-      // Signup Logic with Unique Username Check
-      const { data: existingUser } = await supabase.from('profiles').select('username').eq('username', username).single();
-      if (existingUser) {
-        alert("Username already taken!");
-        setLoading(false);
-        return;
-      }
-
-      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-      if (authError) alert(authError.message);
-      else if (authData.user) {
-        await supabase.from('profiles').insert([
-          { id: authData.user.id, username, email, is_admin: email === 'tournamentsakamao@gmail.com' }
-        ]);
-        alert("Registration Successful! Please Login.");
-        setIsLogin(true);
-      }
+      const { data, error } = await supabase.auth.signUp({
+        email: fakeEmail,
+        password: password,
+        options: { data: { username: username } }
+      });
+      if (error) alert(error.message);
+      else alert("Account Created! You can now Login.");
     }
     setLoading(false);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-b from-black to-secondary">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }} 
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md p-8 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl"
-      >
-        <h1 className="text-3xl font-bold text-center mb-8 text-primary">TOURNAMENT SA KAMAO</h1>
-        
-        <form onSubmit={handleAuth} className="space-y-6">
-          {!isLogin && (
-            <input
-              type="text"
-              placeholder="Unique Username"
-              className="w-full p-3 bg-black border border-zinc-700 rounded-lg focus:border-primary outline-none"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          )}
-          <input
-            type="email"
-            placeholder="Email Address"
-            className="w-full p-3 bg-black border border-zinc-700 rounded-lg focus:border-primary outline-none"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full p-3 bg-black border border-zinc-700 rounded-lg focus:border-primary outline-none"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          
-          <button
-            type="submit"
-            disabled={loading}
-            onMouseEnter={playTouchEffect}
-            className="w-full py-3 bg-primary text-black font-bold rounded-lg hover:bg-yellow-500 transition-all uppercase tracking-widest"
-          >
-            {loading ? "Processing..." : isLogin ? "Login" : "Register"}
-          </button>
-        </form>
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Background Glow */}
+      <div className="absolute top-[-10%] left-[-10%] w-64 h-64 bg-yellow-500/10 rounded-full blur-[100px]" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-64 h-64 bg-yellow-500/10 rounded-full blur-[100px]" />
 
-        <p className="text-center mt-6 text-zinc-400">
-          {isLogin ? "New player?" : "Already a member?"}
-          <span 
-            className="text-primary ml-2 cursor-pointer font-bold underline"
-            onClick={() => { playTap(); setIsLogin(!isLogin); }}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm z-10"
+      >
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-black italic text-white tracking-tighter mb-2">
+            ADMIN'S <span className="text-yellow-500 text-shadow-glow">TOURNAMENT</span>
+          </h1>
+          <p className="text-gray-500 text-[10px] uppercase tracking-[0.3em]">The Elite eSports Arena</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="relative">
+            <input 
+              type="text" placeholder="UNIQUE USERNAME" 
+              className="w-full bg-gray-900/50 border border-gray-800 p-5 rounded-2xl outline-none focus:border-yellow-500 transition-all text-white font-bold"
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </div>
+
+          <div className="relative">
+            <input 
+              type="password" placeholder="PASSWORD" 
+              className="w-full bg-gray-900/50 border border-gray-800 p-5 rounded-2xl outline-none focus:border-yellow-500 transition-all text-white font-bold"
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          <motion.button 
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            onClick={handleAuth}
+            disabled={loading}
+            className="w-full bg-yellow-500 text-black font-black py-5 rounded-2xl shadow-[0_10px_30px_rgba(234,179,8,0.3)] uppercase tracking-widest mt-4"
           >
-            {isLogin ? "Create Account" : "Login Now"}
-          </span>
-        </p>
+            {loading ? "PROCESSING..." : isLogin ? "ENTER ARENA" : "JOIN ELITE"}
+          </motion.button>
+
+          <p className="text-center text-gray-500 text-xs mt-6">
+            {isLogin ? "New to the arena?" : "Already a member?"} 
+            <span 
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-yellow-500 font-bold ml-2 cursor-pointer"
+            >
+              {isLogin ? "CREATE ACCOUNT" : "LOGIN NOW"}
+            </span>
+          </p>
+        </div>
       </motion.div>
+
+      {/* Footer Branding */}
+      <div className="absolute bottom-8 text-center w-full">
+        <p className="text-[10px] text-gray-700 font-medium">SECURED BY ADMIN'S TOURNAMENT V1.0</p>
+      </div>
     </div>
   );
 }
-
