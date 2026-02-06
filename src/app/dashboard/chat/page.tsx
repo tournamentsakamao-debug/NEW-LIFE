@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useChat } from '@/hooks/useChat';
 import { useAuthStore } from '@/store/authStore';
 import { motion } from 'framer-motion';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 export default function ChatPage() {
   const { user } = useAuthStore();
