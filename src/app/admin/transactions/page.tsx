@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { AdminGuard } from '@/lib/authGuard';
+import { supabase } from '../../lib/supabase';
+import { AdminGuard } from '../../lib/authGuard';
 
 export default function AdminTransactions() {
   // FIXED: Added <any[]> to prevent 'never[]' error (Image 988)
