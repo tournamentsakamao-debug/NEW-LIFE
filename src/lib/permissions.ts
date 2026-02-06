@@ -1,11 +1,17 @@
-export const isAdmin = (email: string | undefined) => {
-  return email === "tournamentsakamao@gmail.com";
-};
+export const ADMIN_EMAILS = [
+  'tournamentsakamao@gmail.com',
+  'prounknown055@gmail.com'
+]
 
-export const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-  }).format(amount);
-};
+export const ADMIN_USERNAMES = [
+  'tournamentsakamao@gmail.com',
+  'prounknown055@gmail.com'
+]
 
+export function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.includes(email.toLowerCase())
+}
+
+export function isAdminUsername(username: string): boolean {
+  return ADMIN_USERNAMES.includes(username.toLowerCase())
+}
