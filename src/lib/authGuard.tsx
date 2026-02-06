@@ -1,8 +1,10 @@
 import { supabase } from './supabase';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-// 1. Existing function for banning check
+// 1. Check User Status
 export const checkUserStatus = async (userId: string) => {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('profiles')
     .select('is_banned')
     .eq('id', userId)
@@ -18,10 +20,7 @@ export const checkUserStatus = async (userId: string) => {
   return true;
 };
 
-// 2. Missing AdminGuard component (Jo error aa raha tha)
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-
+// 2. Admin Guard (Sahi Syntax ke saath)
 export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const router = useRouter();
@@ -30,17 +29,23 @@ export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Yahan apna Admin Email daal do
       if (user && user.email === 'tournamentsakamao@gmail.com') {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
-        router.push('/'); // Agar admin nahi hai toh home pe bhej do
+        router.push('/');
       }
     };
     checkAdmin();
   }, [router]);
 
-  if (isAdmin === null) return <div>Loading Admin Panel...</div>;
+  if (isAdmin === null) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Checking Admin Access...</p>
+      </div>
+    );
+  }
+
   return isAdmin ? <>{children}</> : null;
 };
