@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 export const useTournament = () => {
   const joinTournament = async (t_id: string, u_id: string, fee: number, g_uid: string, msg: string) => {
