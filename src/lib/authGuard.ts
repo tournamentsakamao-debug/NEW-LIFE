@@ -1,5 +1,5 @@
 "use client";
-import { supabase } from '@/lib/supabase'; // FIXED: Relative path ki jagah alias use kiya
+import { supabase } from '../../lib/supabase'; // FIXED: Relative path ki jagah alias use kiya
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
