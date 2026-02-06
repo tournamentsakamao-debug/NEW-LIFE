@@ -1,83 +1,57 @@
 "use client";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useAudio } from "@/context/AudioContext";
-import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { useWalletStore } from '@/store/walletStore';
+import TournamentCard from '@/components/tournament/TournamentCard';
+import { supabase } from '@/lib/supabase';
 
-export default function Dashboard() {
-  const { playTap, playTouchEffect } = useAudio();
-  const [games, setGames] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
+export default function UserDashboard() {
+  const { user } = useAuthStore();
+  const { balance, fetchBalance } = useWalletStore();
+  const [tournaments, setTournaments] = useState([]);
 
   useEffect(() => {
-    const fetchGames = async () => {
-      const { data } = await supabase.from("games").select("*").eq("is_active", true);
-      if (data) setGames(data);
-      setLoading(false);
-    };
-    fetchGames();
-  }, []);
+    if (user) {
+      fetchBalance(user.id);
+      loadTournaments();
+    }
+  }, [user]);
+
+  const loadTournaments = async () => {
+    const { data } = await supabase.from('tournaments').select('*').order('created_at', { ascending: false });
+    if (data) setTournaments(data);
+  };
 
   return (
-    <div className="min-h-screen bg-black pb-20">
-      <Navbar />
-
-      {/* Hero Banner Section */}
-      <div className="p-4">
-        <div className="w-full h-40 bg-gradient-to-r from-accent to-black rounded-2xl flex items-center justify-center border border-zinc-800 overflow-hidden relative">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-30"></div>
-            <h2 className="text-2xl font-black italic text-white z-10">BEST TOURNAMENTS AWAIT</h2>
+    <div className="pb-24">
+      {/* Header / Wallet Section */}
+      <div className="p-6 bg-gradient-to-b from-yellow-500/10 to-transparent">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <p className="text-gray-400 text-sm">Welcome back,</p>
+            <h1 className="text-2xl font-black">{user?.user_metadata?.username || 'Player'}</h1>
+          </div>
+          <div className="bg-gray-900 border border-gray-700 p-2 px-4 rounded-xl text-right">
+            <p className="text-[10px] text-gray-500 uppercase">Balance</p>
+            <p className="text-yellow-500 font-bold">₹{balance.toFixed(2)}</p>
+          </div>
         </div>
-      </div>
 
-      {/* Game Selection */}
-      <div className="px-4 mt-4">
-        <h3 className="text-zinc-500 font-bold uppercase text-xs tracking-widest mb-4">Choose Your Battle</h3>
-        
-        {loading ? (
-          <div className="grid grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-48 bg-zinc-900 animate-pulse rounded-xl"></div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {games.map((game) => (
-              <motion.div
-                key={game.id}
-                whileTap={{ scale: 0.95 }}
-                onMouseEnter={playTouchEffect}
-                onClick={() => { playTap(); router.push(`/join/${game.id}`); }}
-                className="relative h-56 rounded-xl overflow-hidden border border-zinc-800 group"
-              >
-                <img 
-                  src={game.banner_url || "/assets/images/default-game.jpg"} 
-                  alt={game.name}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
-                <div className="absolute bottom-3 left-3">
-                  <p className="text-white font-black uppercase italic text-lg leading-tight">{game.name}</p>
-                  <span className="text-[10px] bg-primary text-black px-2 py-0.5 rounded-full font-bold">ACTIVE</span>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
+        {/* Action Buttons */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <button className="bg-yellow-500 text-black font-bold py-3 rounded-xl active:scale-95 transition-all">ADD MONEY</button>
+          <button className="bg-white/10 text-white font-bold py-3 rounded-xl active:scale-95 transition-all">WITHDRAW</button>
+        </div>
 
-      {/* Floating Action Button (Create) */}
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={() => { playTap(); router.push('/create'); }}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-primary rounded-full shadow-[0_0_20px_rgba(255,215,0,0.5)] flex items-center justify-center text-black z-50"
-      >
-        <span className="text-3xl font-bold">+</span>
-      </motion.button>
+        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <span className="w-1 h-6 bg-yellow-500 rounded-full"></span>
+          LIVE TOURNAMENTS
+        </h2>
+
+        {tournaments.map((t: any) => (
+          <TournamentCard key={t.id} data={t} />
+        ))}
+      </div>
     </div>
   );
 }
