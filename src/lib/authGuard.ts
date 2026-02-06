@@ -1,53 +1,55 @@
-"use client";
-import { supabase } from '../../lib/supabase'; // FIXED: Relative path ki jagah alias use kiya
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { supabase } from './supabase'
 
-// 1. Check User Status
-export const checkUserStatus = async (userId: string) => {
-  const { data } = await supabase
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const inputHash = await hashPassword(password)
+  return inputHash === hash
+}
+
+export async function getCurrentUser() {
+  const userId = localStorage.getItem('userId')
+  if (!userId) return null
+
+  const { data, error } = await supabase
     .from('profiles')
-    .select('is_banned')
+    .select('*')
     .eq('id', userId)
-    .single();
+    .single()
 
-  if (data?.is_banned) {
-    await supabase.auth.signOut();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/?error=banned';
-    }
-    return false;
+  if (error || !data) return null
+  return data
+}
+
+export async function checkAuth() {
+  const user = await getCurrentUser()
+  if (!user) {
+    window.location.href = '/login'
+    return null
   }
-  return true;
-};
-
-// 2. Admin Guard
-export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const router = useRouter();
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // Email check for admin access
-      if (user && user.email === 'tournamentsakamao@gmail.com') {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-        router.push('/');
-      }
-    };
-    checkAdmin();
-  }, [router]);
-
-  if (isAdmin === null) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-yellow-500 font-bold uppercase tracking-widest italic">
-        <p>Verifying Admin Access...</p>
-      </div>
-    );
+  
+  if (user.is_banned) {
+    localStorage.removeItem('userId')
+    alert('Your account has been permanently banned.')
+    window.location.href = '/login'
+    return null
   }
+  
+  return user
+}
 
-  return isAdmin ? <>{children}</> : null;
-};
+export async function checkAdminAuth() {
+  const user = await checkAuth()
+  if (!user || user.role !== 'admin') {
+    window.location.href = '/dashboard'
+    return null
+  }
+  return user
+}
