@@ -1,62 +1,226 @@
-"use client";
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { AdminGuard } from '@/lib/authGuard';
-import { motion } from 'framer-motion';
+'use client'
 
-export default function AdminDashboard() {
-  const [stats, setStats] = useState({ users: 0, balance: 0, pendingWithdraw: 0, totalJoinFee: 0 });
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase'
+import { Card } from '@/components/ui/Card'
+import { TouchButton } from '@/components/ui/TouchButton'
+import { 
+  Users, 
+  Trophy, 
+  Wallet, 
+  MessageSquare, 
+  Settings,
+  TrendingUp,
+  LogOut
+} from 'lucide-react'
+
+export default function AdminPage() {
+  const router = useRouter()
+  const { user, loading, logout } = useAuth()
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    onlineUsers: 0,
+    totalTournaments: 0,
+    totalTransactions: 0,
+    adminWallet: 0,
+    pendingDeposits: 0,
+    pendingWithdrawals: 0,
+  })
 
   useEffect(() => {
-    const fetchStats = async () => {
-      const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-      const { data: trans } = await supabase.from('transactions').select('amount, type, status');
-      
-      const pendingW = trans?.filter(t => t.type === 'withdraw' && t.status === 'pending').reduce((a, b) => a + b.amount, 0);
-      const profit = trans?.filter(t => t.type === 'join' && t.status === 'completed').reduce((a, b) => a + b.amount, 0);
+    if (!loading && (!user || user.role !== 'admin')) {
+      router.push('/login')
+    } else if (user) {
+      loadStats()
+    }
+  }, [user, loading, router])
 
-      setStats({ 
-        users: userCount || 0, 
-        balance: 0, // System balance logic
-        pendingWithdraw: pendingW || 0,
-        totalJoinFee: profit || 0 
-      });
-    };
-    fetchStats();
-  }, []);
+  const loadStats = async () => {
+    // Total Users
+    const { count: totalUsers } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+
+    // Total Tournaments
+    const { count: totalTournaments } = await supabase
+      .from('tournaments')
+      .select('*', { count: 'exact', head: true })
+
+    // Total Transactions
+    const { count: totalTransactions } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+
+    // Pending Deposits
+    const { count: pendingDeposits } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'deposit')
+      .eq('status', 'pending')
+
+    // Pending Withdrawals
+    const { count: pendingWithdrawals } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'withdraw')
+      .eq('status', 'pending')
+
+    // Admin Wallet
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('wallet_balance')
+      .eq('id', user?.id)
+      .single()
+
+    setStats({
+      totalUsers: totalUsers || 0,
+      onlineUsers: 0, // Implement real-time tracking if needed
+      totalTournaments: totalTournaments || 0,
+      totalTransactions: totalTransactions || 0,
+      adminWallet: adminProfile?.wallet_balance || 0,
+      pendingDeposits: pendingDeposits || 0,
+      pendingWithdrawals: pendingWithdrawals || 0,
+    })
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-luxury-gold"></div>
+      </div>
+    )
+  }
+
+  if (!user || user.role !== 'admin') return null
 
   return (
-    <AdminGuard>
-      <div className="p-6 bg-black min-h-screen text-white pb-24">
-        <h1 className="text-3xl font-black italic text-yellow-500 mb-8 tracking-tighter uppercase">Command Center</h1>
-        
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <StatCard label="Total Players" value={stats.users} color="border-blue-500" />
-          <StatCard label="Total Revenue" value={`₹${stats.totalJoinFee}`} color="border-green-500" />
-          <StatCard label="Pending Payouts" value={`₹${stats.pendingWithdraw}`} color="border-red-500" />
-          <StatCard label="Active Events" value="12" color="border-yellow-500" />
-        </div>
-
-        {/* Profit Analysis Chart Placeholder */}
-        <div className="bg-gray-900 border border-gray-800 p-6 rounded-3xl mb-6">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Profit Analysis</h3>
-          <div className="h-32 w-full bg-gradient-to-t from-yellow-500/20 to-transparent rounded-xl border-b border-yellow-500/50 flex items-end p-2 justify-between">
-            {[40, 70, 45, 90, 65, 80, 95].map((h, i) => (
-              <motion.div key={i} initial={{ height: 0 }} animate={{ height: `${h}%` }} className="w-4 bg-yellow-500 rounded-t-sm" />
-            ))}
+    <div className="min-h-screen bg-luxury-black">
+      {/* Header */}
+      <header className="bg-luxury-gray border-b border-luxury-lightGray">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
+              <p className="text-sm text-gray-400">Welcome back, {user.username}</p>
+            </div>
+            <TouchButton variant="danger" onClick={logout}>
+              <LogOut className="w-5 h-5 mr-2" />
+              Logout
+            </TouchButton>
           </div>
         </div>
-      </div>
-    </AdminGuard>
-  );
-}
+      </header>
 
-function StatCard({ label, value, color }: any) {
-  return (
-    <div className={`bg-gray-900 border-l-4 ${color} p-4 rounded-xl`}>
-      <p className="text-[10px] text-gray-500 uppercase font-bold">{label}</p>
-      <p className="text-xl font-black mt-1">{value}</p>
+      <main className="container mx-auto px-4 py-6">
+        {/* Admin Wallet */}
+        <Card className="mb-6 bg-gradient-to-br from-luxury-gold/10 to-luxury-darkGold/10 border-luxury-gold/30">
+          <div className="text-center">
+            <p className="text-gray-400 mb-2">Admin Wallet</p>
+            <h2 className="text-5xl font-bold text-luxury-gold mb-4">₹{stats.adminWallet}</h2>
+            <div className="flex items-center justify-center gap-2 text-green-400">
+              <TrendingUp className="w-5 h-5" />
+              <span className="text-sm">Total Balance</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Quick Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <Users className="w-8 h-8 text-luxury-gold mb-2" />
+            <p className="text-gray-400 text-sm">Total Users</p>
+            <p className="text-2xl font-bold text-white">{stats.totalUsers}</p>
+          </Card>
+          <Card>
+            <Trophy className="w-8 h-8 text-luxury-gold mb-2" />
+            <p className="text-gray-400 text-sm">Tournaments</p>
+            <p className="text-2xl font-bold text-white">{stats.totalTournaments}</p>
+          </Card>
+          <Card>
+            <Wallet className="w-8 h-8 text-luxury-gold mb-2" />
+            <p className="text-gray-400 text-sm">Transactions</p>
+            <p className="text-2xl font-bold text-white">{stats.totalTransactions}</p>
+          </Card>
+          <Card>
+            <MessageSquare className="w-8 h-8 text-luxury-gold mb-2" />
+            <p className="text-gray-400 text-sm">Messages</p>
+            <p className="text-2xl font-bold text-white">0</p>
+          </Card>
+        </div>
+
+        {/* Pending Actions */}
+        {(stats.pendingDeposits > 0 || stats.pendingWithdrawals > 0) && (
+          <Card className="mb-6 bg-yellow-600/10 border-yellow-600/20">
+            <h3 className="text-white font-bold mb-3">⚠️ Pending Actions</h3>
+            <div className="space-y-2">
+              {stats.pendingDeposits > 0 && (
+                <p className="text-yellow-400 text-sm">
+                  {stats.pendingDeposits} deposit request(s) waiting for approval
+                </p>
+              )}
+              {stats.pendingWithdrawals > 0 && (
+                <p className="text-yellow-400 text-sm">
+                  {stats.pendingWithdrawals} withdrawal request(s) waiting for approval
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {/* Quick Actions */}
+        <h2 className="text-xl font-bold text-white mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TouchButton
+            variant="luxury"
+            className="justify-start h-auto py-6"
+            onClick={() => router.push('/admin/tournaments')}
+          >
+            <Trophy className="w-6 h-6 mr-3" />
+            <div className="text-left">
+              <p className="font-bold">Manage Tournaments</p>
+              <p className="text-xs opacity-80">Create, edit, or delete tournaments</p>
+            </div>
+          </TouchButton>
+
+          <TouchButton
+            variant="luxury"
+            className="justify-start h-auto py-6"
+            onClick={() => router.push('/admin/transactions')}
+          >
+            <Wallet className="w-6 h-6 mr-3" />
+            <div className="text-left">
+              <p className="font-bold">Transaction Requests</p>
+              <p className="text-xs opacity-80">Approve deposits & withdrawals</p>
+            </div>
+          </TouchButton>
+
+          <TouchButton
+            variant="luxury"
+            className="justify-start h-auto py-6"
+            onClick={() => router.push('/admin/chats')}
+          >
+            <MessageSquare className="w-6 h-6 mr-3" />
+            <div className="text-left">
+              <p className="font-bold">User Messages</p>
+              <p className="text-xs opacity-80">View and reply to user chats</p>
+            </div>
+          </TouchButton>
+
+          <TouchButton
+            variant="luxury"
+            className="justify-start h-auto py-6"
+            onClick={() => router.push('/admin/settings')}
+          >
+            <Settings className="w-6 h-6 mr-3" />
+            <div className="text-left">
+              <p className="font-bold">System Settings</p>
+              <p className="text-xs opacity-80">App configuration & maintenance</p>
+            </div>
+          </TouchButton>
+        </div>
+      </main>
     </div>
-  );
-}
-
+  )
+          }
