@@ -3,13 +3,10 @@ name: Next.js Build Check
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -18,10 +15,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # Cache hata diya kyunki lock file nahi hai
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Run Next.js Build
         run: npm run build
