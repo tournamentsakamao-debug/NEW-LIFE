@@ -1,24 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-
-  typescript: {
-    ignoreBuildErrors: false,
-  },
-
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   images: {
-    unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**.supabase.co',
-      },
-    ],
+    domains: ['pcgzjgfzcyucvwhrldbq.supabase.co'],
   },
-};
+  experimental: {
+    serverActions: true,
+  },
+}
 
-module.exports = nextConfig;
+module.exports = nextConfig
