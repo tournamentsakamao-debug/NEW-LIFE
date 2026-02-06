@@ -1,22 +1,60 @@
-import { supabase } from '../../lib/supabase';
+import { useState, useEffect } from 'react'
+import { supabase, Tournament } from '@/lib/supabase'
+import { useTournamentStore } from '@/store/tournamentStore'
 
-export const useTournament = () => {
-  const joinTournament = async (t_id: string, u_id: string, fee: number, g_uid: string, msg: string) => {
-    const { data, error } = await supabase.rpc('join_tournament_final', {
-      t_id,
-      u_id,
-      fee,
-      g_uid,
-      admin_msg: msg
-    });
+export function useTournament() {
+  const { tournaments, setTournaments } = useTournamentStore()
+  const [loading, setLoading] = useState(false)
 
-    if (error) {
-      console.error("Join Error:", error.message);
-      throw error;
+  useEffect(() => {
+    loadTournaments()
+    subscribeToTournaments()
+  }, [])
+
+  async function loadTournaments() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('tournaments')
+      .select('*')
+      .order('tournament_date', { ascending: true })
+
+    if (data) {
+      setTournaments(data)
     }
-    return data;
-  };
+    setLoading(false)
+  }
 
-  return { joinTournament };
-};
+  function subscribeToTournaments() {
+    const channel = supabase
+      .channel('tournament-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'tournaments'
+      }, (payload) => {
+        loadTournaments()
+      })
+      .subscribe()
 
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }
+
+  async function getTournamentById(id: string) {
+    const { data } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    return data
+  }
+
+  return {
+    tournaments,
+    loading,
+    getTournamentById,
+    refreshTournaments: loadTournaments
+  }
+}
