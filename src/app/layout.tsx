@@ -1,31 +1,44 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
-import { AudioProvider } from "@/context/AudioContext";
+"use client";
+import './globals.css';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { supabase } from '@/lib/supabase';
 
-const inter = Inter({ subsets: ["latin"] });
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const setUser = useAuthStore((state) => state.setUser);
 
-export const metadata: Metadata = {
-  title: "Tournament Sa Kamao",
-  description: "Play, Win, and Earn",
-};
+  // Click Sound Logic
+  const playClick = () => {
+    const audio = new Audio('/sounds/click.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(() => {}); // Browser policy handle
+  };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+  useEffect(() => {
+    // Auth Session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    // Global Click Listener for App feel
+    window.addEventListener('click', playClick);
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('click', playClick);
+    };
+  }, []);
+
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-black text-white`}>
-        <AuthProvider>
-          <AudioProvider>
-            {children}
-          </AudioProvider>
-        </AuthProvider>
+      <body className="bg-black text-white selection:bg-gold-500">
+        <main className="min-h-screen max-w-md mx-auto border-x border-gray-800 shadow-2xl relative overflow-x-hidden">
+          {children}
+        </main>
       </body>
     </html>
   );
 }
-
