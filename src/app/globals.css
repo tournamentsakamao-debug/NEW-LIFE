@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 0, 0, 0;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-start-rgb));
+  -webkit-tap-highlight-color: transparent; /* Mobile touch highlight remove */
+  user-select: none; /* Prevents text selection for app feel */
+}
+
+/* Luxurious Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #000;
+}
+::-webkit-scrollbar-thumb {
+  background: #EAB308;
+  border-radius: 10px;
+}
+
+.text-shadow-glow {
+  text-shadow: 0 0 10px rgba(234, 179, 8, 0.5);
+}
+
+/* Button Touch Animation */
+.active-scale {
+  @apply active:scale-95 transition-transform duration-100;
+}
+
