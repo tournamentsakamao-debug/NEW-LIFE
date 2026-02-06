@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { AdminGuard } from '@/lib/authGuard';
+import { supabase } from '../../lib/supabase';
+import { AdminGuard } from '../../lib/authGuard';
 import { motion } from 'framer-motion';
 
 export default function AdminDashboard() {
