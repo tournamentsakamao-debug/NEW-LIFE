@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useWalletStore } from '@/store/walletStore';
 import TournamentCard from '@/components/tournament/TournamentCard';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/authGuard';
 
 export default function UserDashboard() {
   const { user } = useAuthStore();
