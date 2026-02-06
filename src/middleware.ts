@@ -5,18 +5,12 @@ import type { NextRequest } from 'next/server';
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
-  
-  // getSession() ki jagah getUser() zyada secure hota hai, 
-  // par abhi ke liye session hi rehne dete hain errors avoid karne ke liye
   const { data: { session } } = await supabase.auth.getSession();
 
-  const pathname = req.nextUrl.pathname;
-
-  // Redirect if not logged in for dashboard OR admin
-  if (!session && (pathname.startsWith('/dashboard') || pathname.startsWith('/admin'))) {
-    // Edge runtime par new URL(req.url) ki jagah req.nextUrl.clone() zyada stable hai
+  if (!session && (req.nextUrl.pathname.startsWith('/dashboard') || req.nextUrl.pathname.startsWith('/admin'))) {
+    // Edge-safe redirect
     const url = req.nextUrl.clone();
-    url.pathname = '/'; 
+    url.pathname = '/';
     return NextResponse.redirect(url);
   }
 
