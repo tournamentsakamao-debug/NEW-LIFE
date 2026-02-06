@@ -1,19 +1,16 @@
-import { useAuthStore } from '@/store/authStore';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { supabase } from './supabase';
 
-export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
-  const { isAdmin, isLoading } = useAuthStore();
-  const router = useRouter();
+export const checkUserStatus = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('is_banned')
+    .eq('id', userId)
+    .single();
 
-  useEffect(() => {
-    if (!isLoading && !isAdmin) {
-      router.push('/dashboard'); // Non-admins redirected
-    }
-  }, [isAdmin, isLoading]);
-
-  if (isLoading || !isAdmin) return <div className="h-screen bg-black flex center italic">Verifying Admin...</div>;
-
-  return <>{children}</>;
+  if (data?.is_banned) {
+    await supabase.auth.signOut();
+    window.location.href = '/?error=banned';
+    return false;
+  }
+  return true;
 };
-
