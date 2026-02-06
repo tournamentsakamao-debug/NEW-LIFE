@@ -2,7 +2,7 @@
 import './globals.css';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const setUser = useAuthStore((state) => state.setUser);
