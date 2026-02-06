@@ -1,68 +1,130 @@
-"use client";
-import { useState, useEffect } from 'react';
-import { useChat } from '@/hooks/useChat';
-import { useAuthStore } from '@/store/authStore';
-import { motion } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
+'use client'
+
+import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { useChat } from '@/hooks/useChat'
+import { TouchButton } from '@/components/ui/TouchButton'
+import { Card } from '@/components/ui/Card'
+import { ArrowLeft, Send } from 'lucide-react'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
 
 export default function ChatPage() {
-  const { user } = useAuthStore();
-  const { messages, sendMessage } = useChat(user?.id);
-  const [input, setInput] = useState("");
-  const [isChatEnabled, setIsChatEnabled] = useState(true);
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+  const { messages, chatEnabled, sendMessage, loading } = useChat()
+  const [message, setMessage] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Check if admin has disabled chat
-    supabase.from('system_settings').select('chat_enabled').single()
-      .then(({ data }) => setIsChatEnabled(data?.chat_enabled ?? true));
-  }, []);
+    if (!authLoading && !user) {
+      router.push('/login')
+    }
+  }, [user, authLoading, router])
 
-  const handleSend = () => {
-    if (!input.trim() || !isChatEnabled) return;
-    sendMessage(input, 'user');
-    setInput("");
-  };
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const handleSend = async () => {
+    if (!message.trim()) return
+
+    const result = await sendMessage(message)
+    if (result.success) {
+      setMessage('')
+    } else {
+      toast.error(result.error || 'Failed to send message')
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-luxury-gold"></div>
+      </div>
+    )
+  }
+
+  if (!user) return null
 
   return (
-    <div className="flex flex-col h-[90vh] bg-black text-white p-4">
-      <header className="flex items-center gap-3 mb-6 border-b border-gray-800 pb-4">
-        <div className="w-10 h-10 rounded-full bg-yellow-500 flex items-center justify-center font-bold text-black">A</div>
-        <div>
-          <h2 className="font-bold">Admin Support</h2>
-          <p className="text-[10px] text-green-500 uppercase font-bold tracking-tighter">Online</p>
+    <div className="min-h-screen bg-luxury-black flex flex-col">
+      {/* Header */}
+      <header className="bg-luxury-gray border-b border-luxury-lightGray">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="p-2 hover:bg-luxury-lightGray rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-6 h-6 text-white" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white">Chat with Admin</h1>
+              <p className="text-xs text-gray-400">
+                {chatEnabled ? 'Online' : 'Offline'}
+              </p>
+            </div>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 scrollbar-hide">
-        {messages.map((msg, i) => (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+      {/* Messages */}
+      <main className="flex-1 overflow-y-auto p-4 space-y-3">
+        {!chatEnabled && (
+          <Card className="bg-yellow-600/10 border-yellow-600/20">
+            <p className="text-yellow-400 text-sm text-center">
+              Admin is busy, you are not able to chat now
+            </p>
+          </Card>
+        )}
+
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${
-              msg.sender === 'user' ? 'bg-yellow-500 text-black rounded-tr-none' : 'bg-gray-900 text-white rounded-tl-none border border-gray-800'
-            }`}>
-              {msg.content}
+            <div
+              className={`max-w-[80%] p-4 rounded-2xl ${
+                msg.sender === 'user'
+                  ? 'bg-luxury-gold text-luxury-black rounded-br-none'
+                  : 'bg-luxury-lightGray text-white rounded-bl-none'
+              }`}
+            >
+              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+              <p className={`text-xs mt-2 ${msg.sender === 'user' ? 'text-luxury-black/60' : 'text-gray-500'}`}>
+                {format(new Date(msg.created_at), 'HH:mm')}
+              </p>
             </div>
-          </motion.div>
+          </div>
         ))}
+        <div ref={messagesEndRef} />
+      </main>
+
+      {/* Input */}
+      <div className="bg-luxury-gray border-t border-luxury-lightGray p-4">
+        <div className="container mx-auto">
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              placeholder={chatEnabled ? "Type a message..." : "Chat disabled"}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+              disabled={!chatEnabled || loading}
+              className="flex-1 px-4 py-3 bg-luxury-lightGray border border-luxury-lightGray rounded-full text-white placeholder-gray-500 focus:outline-none focus:border-luxury-gold transition-colors disabled:opacity-50"
+            />
+            <button
+              onClick={handleSend}
+              disabled={!chatEnabled || loading || !message.trim()}
+              className="p-3 bg-luxury-gold hover:bg-luxury-darkGold disabled:opacity-50 rounded-full transition-colors"
+            >
+              <Send className="w-6 h-6 text-luxury-black" />
+            </button>
+          </div>
+        </div>
       </div>
-
-      {!isChatEnabled ? (
-        <div className="bg-red-900/20 border border-red-800 p-4 rounded-xl text-center">
-          <p className="text-red-500 text-xs font-bold uppercase italic">Admin is busy, you are not able to chat now</p>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <input 
-            value={input} onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..." 
-            className="flex-1 bg-gray-900 p-4 rounded-2xl outline-none focus:ring-1 ring-yellow-500 transition-all text-sm"
-          />
-          <button onClick={handleSend} className="bg-yellow-500 text-black p-4 rounded-2xl font-black">SEND</button>
-        </div>
-      )}
     </div>
-  );
-}
-
+  )
+              }
