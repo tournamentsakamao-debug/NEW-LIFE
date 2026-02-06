@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+"use client";
+import { supabase } from '@/lib/supabase'; // FIXED: Relative path ki jagah alias use kiya
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -20,7 +21,7 @@ export const checkUserStatus = async (userId: string) => {
   return true;
 };
 
-// 2. Admin Guard (Sahi Syntax ke saath)
+// 2. Admin Guard
 export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const router = useRouter();
@@ -29,6 +30,7 @@ export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
     const checkAdmin = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
+      // Email check for admin access
       if (user && user.email === 'tournamentsakamao@gmail.com') {
         setIsAdmin(true);
       } else {
@@ -41,8 +43,8 @@ export const AdminGuard = ({ children }: { children: React.ReactNode }) => {
 
   if (isAdmin === null) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Checking Admin Access...</p>
+      <div className="flex items-center justify-center min-h-screen bg-black text-yellow-500 font-bold uppercase tracking-widest italic">
+        <p>Verifying Admin Access...</p>
       </div>
     );
   }
