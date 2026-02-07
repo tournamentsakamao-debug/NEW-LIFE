@@ -2,7 +2,7 @@
 
 import { Tournament } from '@/lib/supabase'
 import { Card } from '@/components/ui/Card'
-import { Crown, Users, Trophy, Calendar, Clock } from 'lucide-react'
+import { Crown, Users, Trophy, Map as MapIcon, ShieldCheck } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface TournamentCardProps {
@@ -12,104 +12,105 @@ interface TournamentCardProps {
 
 export function TournamentCard({ tournament, onClick }: TournamentCardProps) {
   const isFree = tournament.join_fee === 0
-  const isPractice = tournament.prize_money === 0
-  const isPrivate = !!tournament.password
   const isFull = tournament.slots_joined >= tournament.slots_total
+  const fillPercentage = (tournament.slots_joined / tournament.slots_total) * 100
 
   return (
-    <Card hover onClick={onClick} className="relative overflow-hidden">
-      {/* Luxury Badge */}
-      {tournament.is_luxury && (
-        <div className="absolute top-4 right-4 z-10">
-          <div className="bg-gradient-to-r from-luxury-gold to-luxury-darkGold px-3 py-1 rounded-full flex items-center gap-1">
-            <Crown className="w-4 h-4 text-luxury-black" />
-            <span className="text-xs font-bold text-luxury-black">LUXURY</span>
-          </div>
-        </div>
-      )}
-
-      {/* Banner */}
-      <div className="w-full h-40 bg-gradient-to-br from-luxury-gold/20 to-luxury-darkGold/20 rounded-lg mb-4 overflow-hidden">
+    <Card variant={tournament.is_luxury ? 'luxury' : 'default'} hover onClick={onClick} noPadding className="group">
+      {/* 1. Image Header with Badge Overlays */}
+      <div className="relative h-44 w-full overflow-hidden">
         {tournament.banner_main ? (
           <img 
             src={tournament.banner_main} 
             alt={tournament.name}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Trophy className="w-16 h-16 text-luxury-gold/50" />
+          <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+            <Trophy className="w-12 h-12 text-luxury-gold/20" />
           </div>
         )}
-      </div>
-
-      {/* Labels */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        {isFree && (
-          <span className="px-3 py-1 bg-green-600/20 text-green-400 text-xs font-bold rounded-full">
-            FREE
-          </span>
-        )}
-        {isPractice && (
-          <span className="px-3 py-1 bg-purple-600/20 text-purple-400 text-xs font-bold rounded-full">
-            eSports Practice
-          </span>
-        )}
-        {isPrivate && (
-          <span className="px-3 py-1 bg-blue-600/20 text-blue-400 text-xs font-bold rounded-full">
-            🔒 Encrypted Private eSports
-          </span>
-        )}
-        {isFull && (
-          <span className="px-3 py-1 bg-red-600/20 text-red-400 text-xs font-bold rounded-full">
-            FULL
-          </span>
-        )}
-      </div>
-
-      {/* Tournament Info */}
-      <h3 className="text-xl font-bold text-white mb-2">{tournament.name}</h3>
-      <p className="text-gray-400 text-sm mb-4">{tournament.game_name} • {tournament.game_mode.toUpperCase()}</p>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-luxury-gold" />
-          <div>
-            <p className="text-xs text-gray-400">Slots</p>
-            <p className="text-white font-bold">{tournament.slots_joined}/{tournament.slots_total}</p>
+        
+        {/* Requirement 1.1: Live Pulse Badge */}
+        {tournament.status === 'live' && (
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 px-2.5 py-1 rounded-md animate-pulse">
+            <div className="w-1.5 h-1.5 bg-white rounded-full" />
+            <span className="text-[10px] font-black text-white uppercase tracking-tighter">Live Now</span>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-luxury-gold" />
-          <div>
-            <p className="text-xs text-gray-400">Prize</p>
-            <p className="text-white font-bold">₹{tournament.prize_money}</p>
+        )}
+
+        {/* Luxury Badge */}
+        {tournament.is_luxury && (
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md border border-luxury-gold/30 p-1.5 rounded-lg">
+            <Crown className="w-4 h-4 text-luxury-gold" />
+          </div>
+        )}
+
+        {/* Bottom Image Overlay: Game Mode & Map */}
+        <div className="absolute bottom-0 inset-x-0 h-1/2 bg-gradient-to-t from-black via-black/40 to-transparent p-4 flex items-end justify-between">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-luxury-gold uppercase tracking-[0.2em]">
+              {tournament.game_name}
+            </span>
+            <h3 className="text-lg font-black text-white uppercase leading-tight italic tracking-tighter">
+              {tournament.name}
+            </h3>
+          </div>
+          <div className="bg-white/10 backdrop-blur-md border border-white/10 px-2 py-1 rounded-md flex items-center gap-1">
+            <MapIcon className="w-3 h-3 text-gray-300" />
+            <span className="text-[9px] font-bold text-gray-200 uppercase">{tournament.map_name || 'TBD'}</span>
           </div>
         </div>
       </div>
 
-      {/* Date & Time */}
-      <div className="flex items-center gap-4 text-sm text-gray-400">
-        <div className="flex items-center gap-1">
-          <Calendar className="w-4 h-4" />
-          <span>{format(new Date(tournament.tournament_date), 'MMM dd, yyyy')}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Clock className="w-4 h-4" />
-          <span>{tournament.tournament_time}</span>
-        </div>
-      </div>
-
-      {/* Join Fee */}
-      {!isFree && (
-        <div className="mt-4 pt-4 border-t border-luxury-lightGray">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-400">Entry Fee</span>
-            <span className="text-luxury-gold font-bold text-lg">₹{tournament.join_fee}</span>
+      {/* 2. Content Section */}
+      <div className="p-5 space-y-4">
+        {/* Info Grid */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white/5 rounded-xl p-2 text-center border border-white/5">
+            <p className="text-[9px] text-gray-500 font-bold uppercase mb-0.5">Prize Pool</p>
+            <p className="text-sm font-black text-white italic">₹{tournament.prize_money}</p>
+          </div>
+          <div className="bg-white/5 rounded-xl p-2 text-center border border-white/5">
+            <p className="text-[9px] text-gray-500 font-bold uppercase mb-0.5">Mode</p>
+            <p className="text-sm font-black text-white italic uppercase">{tournament.game_mode}</p>
+          </div>
+          <div className="bg-white/5 rounded-xl p-2 text-center border border-white/5">
+            <p className="text-[9px] text-gray-500 font-bold uppercase mb-0.5">Entry</p>
+            <p className={`text-sm font-black italic ${isFree ? 'text-green-500' : 'text-luxury-gold'}`}>
+              {isFree ? 'FREE' : `₹${tournament.join_fee}`}
+            </p>
           </div>
         </div>
-      )}
+
+        {/* Requirement 1.7: Visual Slot Progress */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-400">
+            <div className="flex items-center gap-1">
+              <Users className="w-3 h-3" />
+              <span>{tournament.slots_joined}/{tournament.slots_total} Joined</span>
+            </div>
+            <span className={isFull ? 'text-red-500' : ''}>{isFull ? 'Sold Out' : `${tournament.slots_total - tournament.slots_joined} Left`}</span>
+          </div>
+          <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-500 ${isFull ? 'bg-red-500' : 'bg-luxury-gold'}`}
+              style={{ width: `${fillPercentage}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Footer: Date & Veriied Check */}
+        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+           <div className="flex items-center gap-1.5">
+             <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+             <span className="text-[10px] text-gray-500 font-bold uppercase">Official Match</span>
+           </div>
+           <p className="text-[10px] text-gray-300 font-black">
+             {format(new Date(tournament.tournament_date), 'dd MMM')} • {tournament.tournament_time}
+           </p>
+        </div>
+      </div>
     </Card>
   )
-      }
+          }
