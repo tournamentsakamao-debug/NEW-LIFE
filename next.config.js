@@ -1,11 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
+
   images: {
     domains: ['pcgzjgfzcyucvwhrldbq.supabase.co'],
-    unoptimized: true
+    unoptimized: true,
   },
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -17,9 +18,6 @@ const nextConfig = {
     }
     return config
   },
-  experimental: {
-    serverActions: true,
-  }
 }
 
 module.exports = nextConfig
