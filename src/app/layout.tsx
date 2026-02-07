@@ -1,56 +1,54 @@
-import type { Metadata, Viewport } from 'next'
+'use client'
+import { useEffect, useRef } from 'react'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'sonner'
+import { supabase } from '@/lib/supabase'
 
 const inter = Inter({ subsets: ['latin'] })
 
-// Requirement 11: Mobile-friendly viewports (Zoom disable for "App" feel)
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-}
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null)
 
-export const metadata: Metadata = {
-  title: "Admin's Tournament",
-  description: 'Professional eSports Tournament Platform',
-  manifest: '/branding/manifest.json', // App feel ke liye PWA support
-}
+  useEffect(() => {
+    // 1. Check if Admin enabled BG Music & Maintenance Mode
+    const syncSettings = async () => {
+      const { data: settings } = await supabase
+        .from('system_settings')
+        .select('bg_music_on, maintenance_mode')
+        .single()
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+      if (settings?.bg_music_on && bgMusicRef.current) {
+        // Browser requires interaction to play audio
+        const playMusic = () => {
+          bgMusicRef.current?.play().catch(() => {})
+          window.removeEventListener('click', playMusic)
+        }
+        window.addEventListener('click', playMusic)
+      }
+    }
+    syncSettings()
+  }, [])
+
   return (
     <html lang="en" className="dark">
-      <body 
-        className={`${inter.className} bg-[#050505] text-white min-h-screen selection:bg-luxury-gold selection:text-black`}
-      >
-        {/* Requirement 13 & 14: Global Sound Elements */}
-        {/* Ye elements hidden rahenge but har page se access ho payenge */}
-        <audio id="bg-music" src="/sounds/bg.mp3" loop preload="auto" />
+      <head>
+        {/* Favicon from branding */}
+        <link rel="icon" href="/branding/favicon.ico" />
+      </head>
+      <body className={`${inter.className} bg-[#050505] text-white min-h-screen`}>
+        
+        {/* Audio Elements with correct paths */}
+        <audio ref={bgMusicRef} id="bg-music" src="/sounds/bg.mp3" loop />
         <audio id="click-sound" src="/sounds/click.mp3" preload="auto" />
         <audio id="win-sound" src="/sounds/win.mp3" preload="auto" />
 
-        {/* Main Content */}
-        <div className="relative z-10">
-          {children}
-        </div>
+        <div className="relative z-10">{children}</div>
 
-        {/* Requirement 10: Professional Notifications */}
-        <Toaster 
-          position="top-center" 
-          expand={false} 
-          richColors 
-          theme="dark" 
-          closeButton
-        />
-
-        {/* Global Luxury Overlay (Vignette effect for App feel) */}
-        <div className="fixed inset-0 pointer-events-none z-50 shadow-[inset_0_0_100px_rgba(0,0,0,0.5)]" />
+        <Toaster position="top-center" richColors theme="dark" />
+        
+        {/* Global App Vignette */}
+        <div className="fixed inset-0 pointer-events-none z-50 shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]" />
       </body>
     </html>
   )
