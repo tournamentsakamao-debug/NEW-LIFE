@@ -2,378 +2,228 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
-import { supabase, Transaction } from '@/lib/supabase'
-import { Card } from '@/components/ui/Card'
-import { TouchButton } from '@/components/ui/TouchButton'
-import { Input } from '@/components/ui/Input'
-import { Modal } from '@/components/ui/Modal'
-import { ArrowLeft, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '@/store/authStore'
+import { supabase } from '@/lib/supabase'
+import { 
+  ArrowLeft, CheckCircle, XCircle, Clock, Copy, 
+  ExternalLink, Filter, Search, AlertCircle, TrendingUp 
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 
 export default function AdminTransactionsPage() {
   const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const { user: admin, loading: authLoading } = useAuthStore()
+  const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null)
-  const [showApprovalModal, setShowApprovalModal] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
+  
+  // Modal states
+  const [selectedTxn, setSelectedTxn] = useState<any | null>(null)
   const [correctedAmount, setCorrectedAmount] = useState('')
   const [rejectionReason, setRejectionReason] = useState('')
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== 'admin')) {
+    if (!authLoading && (!admin || !admin.isAdmin)) {
       router.push('/login')
-    } else if (user) {
+    } else if (admin) {
       loadTransactions()
     }
-  }, [user, authLoading, router])
+  }, [admin, authLoading, router])
 
   const loadTransactions = async () => {
     const { data } = await supabase
       .from('transactions')
-      .select(`
-        *,
-        profiles:user_id (username)
-      `)
+      .select('*, profiles(username, wallet_balance)')
       .order('created_at', { ascending: false })
-
-    if (data) {
-      setTransactions(data)
-    }
+    if (data) setTransactions(data)
   }
 
-  const handleApprove = async (txn: Transaction, isDeposit: boolean) => {
-    setLoading(true)
-    try {
-      const finalAmount = correctedAmount ? parseFloat(correctedAmount) : txn.amount
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  }
 
-      // Update transaction status
+  const processTransaction = async (status: 'completed' | 'rejected') => {
+    if (!selectedTxn) return
+    if (status === 'rejected' && !rejectionReason.trim()) {
+      return toast.error("Please provide a rejection reason")
+    }
+
+    setLoading(true)
+    const finalAmount = correctedAmount ? parseFloat(correctedAmount) : selectedTxn.amount
+    const isDeposit = selectedTxn.type === 'deposit'
+
+    try {
+      // 1. Update Transaction
       const { error: txnError } = await supabase
         .from('transactions')
-        .update({ status: 'completed', amount: finalAmount })
-        .eq('id', txn.id)
+        .update({ 
+          status, 
+          amount: finalAmount,
+          rejection_reason: status === 'rejected' ? rejectionReason : null,
+          processed_at: new Date().toISOString()
+        })
+        .eq('id', selectedTxn.id)
 
       if (txnError) throw txnError
 
-      // Update user wallet
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('wallet_balance')
-        .eq('id', txn.user_id)
-        .single()
-
-      if (!userProfile) throw new Error('User not found')
-
-      const newBalance = isDeposit
-        ? userProfile.wallet_balance + finalAmount
-        : userProfile.wallet_balance - finalAmount
-
-      const { error: walletError } = await supabase
-        .from('profiles')
-        .update({ wallet_balance: newBalance })
-        .eq('id', txn.user_id)
-
-      if (walletError) throw walletError
-
-      // Update admin wallet for withdrawals
-      if (!isDeposit && user) {
-        const { data: adminProfile } = await supabase
-          .from('profiles')
-          .select('wallet_balance')
-          .eq('id', user.id)
-          .single()
-
-        if (adminProfile) {
-          await supabase
-            .from('profiles')
-            .update({ wallet_balance: adminProfile.wallet_balance - finalAmount })
-            .eq('id', user.id)
-        }
+      // 2. Update User Balance (Only if approved)
+      if (status === 'completed') {
+        const balanceChange = isDeposit ? finalAmount : -finalAmount
+        const { error: balanceError } = await supabase.rpc('increment_wallet', {
+          row_id: selectedTxn.user_id,
+          amount: balanceChange
+        })
+        if (balanceError) throw balanceError
       }
 
-      toast.success(`${isDeposit ? 'Deposit' : 'Withdrawal'} approved successfully!`)
-      setShowApprovalModal(false)
+      toast.success(`Transaction ${status.toUpperCase()}`)
       setSelectedTxn(null)
-      setCorrectedAmount('')
       loadTransactions()
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to approve transaction')
+    } catch (err: any) {
+      toast.error(err.message)
     } finally {
       setLoading(false)
     }
   }
-
-  const handleReject = async (txn: Transaction) => {
-    if (!rejectionReason.trim()) {
-      toast.error('Please provide a rejection reason')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const { error } = await supabase
-        .from('transactions')
-        .update({ 
-          status: 'rejected',
-          rejection_reason: rejectionReason
-        })
-        .eq('id', txn.id)
-
-      if (error) throw error
-
-      toast.success('Transaction rejected')
-      setShowApprovalModal(false)
-      setSelectedTxn(null)
-      setRejectionReason('')
-      loadTransactions()
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to reject transaction')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-luxury-gold"></div>
-      </div>
-    )
-  }
-
-  if (!user || user.role !== 'admin') return null
-
-  const pendingTransactions = transactions.filter(t => t.status === 'pending')
-  const completedTransactions = transactions.filter(t => t.status !== 'pending')
 
   return (
-    <div className="min-h-screen bg-luxury-black">
+    <div className="min-h-screen bg-[#050505] text-white">
       {/* Header */}
-      <header className="bg-luxury-gray border-b border-luxury-lightGray sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4">
+      <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 p-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/admin')}
-              className="p-2 hover:bg-luxury-lightGray rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-6 h-6 text-white" />
-            </button>
-            <h1 className="text-2xl font-bold text-white">Transaction Requests</h1>
+            <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-full"><ArrowLeft size={20}/></button>
+            <h1 className="text-xl font-black text-gold-gradient uppercase tracking-tighter">Financial Requests</h1>
+          </div>
+          <div className="flex gap-2">
+            {['pending', 'all'].map((f) => (
+              <button 
+                key={f}
+                onClick={() => setFilter(f as any)}
+                className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${filter === f ? 'bg-luxury-gold text-black' : 'bg-white/5 text-gray-500'}`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
-        {/* Pending Transactions */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-white mb-4">
-            Pending Requests ({pendingTransactions.length})
-          </h2>
-          {pendingTransactions.length === 0 ? (
-            <Card>
-              <p className="text-gray-400 text-center py-8">No pending requests</p>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {pendingTransactions.map((txn) => (
-                <Card key={txn.id} className="bg-yellow-600/5 border-yellow-600/20">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-5 h-5 text-yellow-400" />
-                        <h3 className="text-lg font-bold text-white capitalize">
-                          {txn.type} Request
-                        </h3>
-                      </div>
-                      <p className="text-gray-400 text-sm mb-3">
-                        User: {(txn as any).profiles?.username || 'Unknown'}
-                      </p>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div>
-                          <p className="text-xs text-gray-400">Amount</p>
-                          <p className="text-luxury-gold font-bold text-xl">₹{txn.amount}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400">Requested</p>
-                          <p className="text-white">{format(new Date(txn.created_at), 'MMM dd, HH:mm')}</p>
-                        </div>
-                      </div>
-                      {txn.utr && (
-                        <div className="bg-luxury-lightGray p-3 rounded-lg mb-3">
-                          <p className="text-xs text-gray-400">UTR / Transaction ID</p>
-                          <p className="text-white font-mono">{txn.utr}</p>
-                        </div>
-                      )}
-                      {txn.game_uid && (
-                        <div className="bg-luxury-lightGray p-3 rounded-lg mb-3">
-                          <p className="text-xs text-gray-400">Game UID</p>
-                          <p className="text-white">{txn.game_uid}</p>
-                        </div>
-                      )}
-                      {txn.admin_message && (
-                        <div className="bg-luxury-lightGray p-3 rounded-lg mb-3">
-                          <p className="text-xs text-gray-400">Message from User</p>
-                          <p className="text-white text-sm">{txn.admin_message}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-2 ml-4">
-                      <TouchButton
-                        variant="luxury"
-                        onClick={() => {
-                          setSelectedTxn(txn)
-                          setShowApprovalModal(true)
-                        }}
-                      >
-                        <CheckCircle className="w-5 h-5 mr-2" />
-                        Review
-                      </TouchButton>
-                    </div>
+      <main className="p-4 max-w-5xl mx-auto">
+        <div className="space-y-4">
+          {transactions.filter(t => filter === 'all' ? true : t.status === 'pending').map((txn) => (
+            <motion.div 
+              layout
+              key={txn.id}
+              className={`p-5 rounded-[2rem] border transition-all ${txn.status === 'pending' ? 'bg-[#111] border-luxury-gold/20 shadow-[0_10px_30px_rgba(212,175,55,0.05)]' : 'bg-white/5 border-white/5 opacity-70'}`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${txn.type === 'deposit' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                    <TrendingUp size={24} className={txn.type === 'withdraw' ? 'rotate-180' : ''} />
                   </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Completed Transactions */}
-        <div>
-          <h2 className="text-xl font-bold text-white mb-4">
-            Transaction History
-          </h2>
-          {completedTransactions.length === 0 ? (
-            <Card>
-              <p className="text-gray-400 text-center py-8">No transactions yet</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {completedTransactions.map((txn) => (
-                <Card key={txn.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
-                        txn.status === 'completed' ? 'bg-green-600/20' : 'bg-red-600/20'
-                      }`}>
-                        {txn.status === 'completed' ? (
-                          <CheckCircle className="w-5 h-5 text-green-400" />
-                        ) : (
-                          <XCircle className="w-5 h-5 text-red-400" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-white font-medium capitalize">
-                          {txn.type} - {(txn as any).profiles?.username}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {format(new Date(txn.created_at), 'MMM dd, yyyy HH:mm')}
-                        </p>
-                      </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-lg">₹{txn.amount}</h3>
+                      <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${txn.type === 'deposit' ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
+                        {txn.type}
+                      </span>
                     </div>
-                    <div className="text-right">
-                      <p className={`font-bold ${
-                        txn.status === 'completed' ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                        ₹{txn.amount}
-                      </p>
-                      <p className={`text-xs ${
-                        txn.status === 'completed' ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                        {txn.status}
-                      </p>
-                    </div>
+                    <p className="text-xs text-gray-500 font-medium">By: <span className="text-white">@{txn.profiles?.username}</span> • {format(new Date(txn.created_at), 'dd MMM, HH:mm')}</p>
                   </div>
-                  {txn.rejection_reason && (
-                    <div className="mt-3 p-3 bg-red-600/10 rounded-lg border border-red-600/20">
-                      <p className="text-xs text-red-400">Reason: {txn.rejection_reason}</p>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      </main>
+                </div>
 
-      {/* Approval Modal */}
-      {selectedTxn && (
-        <Modal
-          isOpen={showApprovalModal}
-          onClose={() => {
-            setShowApprovalModal(false)
-            setSelectedTxn(null)
-            setCorrectedAmount('')
-            setRejectionReason('')
-          }}
-          title={`Review ${selectedTxn.type} Request`}
-        >
-          <div className="space-y-4">
-            <div className="bg-luxury-lightGray p-4 rounded-lg">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">User</span>
-                  <span className="text-white font-bold">
-                    {(selectedTxn as any).profiles?.username}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Requested Amount</span>
-                  <span className="text-luxury-gold font-bold">₹{selectedTxn.amount}</span>
-                </div>
-                {selectedTxn.utr && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">UTR</span>
-                    <span className="text-white font-mono">{selectedTxn.utr}</span>
+                {txn.utr && (
+                  <div className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
+                    <span className="text-[10px] font-mono text-gray-400">UTR: {txn.utr}</span>
+                    <button onClick={() => copyToClipboard(txn.utr)} className="text-luxury-gold hover:text-white"><Copy size={14}/></button>
+                  </div>
+                )}
+
+                {txn.status === 'pending' ? (
+                  <button 
+                    onClick={() => setSelectedTxn(txn)}
+                    className="bg-luxury-gold text-black px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
+                  >
+                    Action
+                  </button>
+                ) : (
+                  <div className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${txn.status === 'completed' ? 'text-green-500' : 'text-red-500'}`}>
+                    {txn.status === 'completed' ? <CheckCircle size={14}/> : <XCircle size={14}/>} {txn.status}
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
+          ))}
+        </div>
+      </main>
 
-            {selectedTxn.type === 'deposit' && (
-              <Input
-                label="Corrected Amount (if different)"
-                type="number"
-                placeholder={`Leave empty to use ₹${selectedTxn.amount}`}
-                value={correctedAmount}
-                onChange={(e) => setCorrectedAmount(e.target.value)}
-              />
-            )}
+      {/* --- ACTION MODAL --- */}
+      <AnimatePresence>
+        {selectedTxn && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setSelectedTxn(null)} />
+            <motion.div 
+              initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}
+              className="relative w-full max-w-lg bg-[#0f0f0f] border border-white/10 rounded-[2.5rem] p-8 overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-luxury-gold" />
+              <h2 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter">Review Transaction</h2>
+              
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">User Balance</p>
+                    <p className="text-lg font-bold">₹{selectedTxn.profiles?.wallet_balance}</p>
+                  </div>
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">Requested</p>
+                    <p className="text-lg font-bold text-luxury-gold">₹{selectedTxn.amount}</p>
+                  </div>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Rejection Reason (if rejecting)
-              </label>
-              <textarea
-                className="w-full px-4 py-3 rounded-lg bg-luxury-lightGray border border-luxury-lightGray text-white placeholder-gray-500 focus:outline-none focus:border-luxury-gold transition-colors"
-                placeholder="Enter reason for rejection..."
-                rows={3}
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-              />
-            </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold ml-1">Correct Amount (Optional)</label>
+                    <input 
+                      type="number" placeholder="Enter different amount if needed"
+                      className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl mt-1 outline-none focus:border-luxury-gold"
+                      value={correctedAmount} onChange={e => setCorrectedAmount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 uppercase font-bold ml-1">Rejection Reason (Only if rejecting)</label>
+                    <textarea 
+                      placeholder="Why is this being rejected?"
+                      className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl mt-1 outline-none focus:border-red-500 min-h-[100px]"
+                      value={rejectionReason} onChange={e => setRejectionReason(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-            <div className="flex gap-3 pt-4">
-              <TouchButton
-                variant="danger"
-                className="flex-1"
-                onClick={() => handleReject(selectedTxn)}
-                disabled={loading}
-              >
-                Reject
-              </TouchButton>
-              <TouchButton
-                variant="luxury"
-                className="flex-1"
-                onClick={() => handleApprove(selectedTxn, selectedTxn.type === 'deposit')}
-                disabled={loading}
-              >
-                Approve
-              </TouchButton>
-            </div>
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    onClick={() => processTransaction('rejected')}
+                    className="flex-1 py-4 bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Reject
+                  </button>
+                  <button 
+                    onClick={() => processTransaction('completed')}
+                    className="flex-1 py-4 bg-luxury-gold text-black rounded-2xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_10px_30px_rgba(212,175,55,0.3)]"
+                  >
+                    Approve Payment
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </Modal>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   )
-        }
+              }
+                    
