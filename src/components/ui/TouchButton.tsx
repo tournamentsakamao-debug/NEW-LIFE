@@ -22,25 +22,30 @@ export function TouchButton({
   ...props 
 }: TouchButtonProps) {
 
-  // Requirement 13: Sound Feedback
+  // Requirement 13: Optimized Click Sound
   const playSound = () => {
     if (soundEnabled && !disabled) {
       const audio = new Audio('/sounds/click.mp3')
-      audio.volume = 0.2
-      audio.play().catch(() => {})
+      audio.volume = 0.3 // Volume thoda badha diya hai clear sunayi dene ke liye
+      
+      // Fast click handling: sound ko start se play karega agar button jaldi jaldi dabaya jaye
+      audio.currentTime = 0 
+      
+      audio.play().catch((err) => {
+        console.warn("Audio play blocked by browser. User must interact with the page first.", err)
+      })
     }
   }
 
-  // Requirement 13: Haptic Feedback (Vibration)
   const triggerHaptic = () => {
     if (hapticEnabled && !disabled && typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(10) // Halka sa 10ms ka click feel
+      navigator.vibrate(12) // Slightly stronger vibration for better feel
     }
   }
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled) return
-    playSound()
+    playSound() // Triggering the sound here
     triggerHaptic()
     onClick?.(e)
   }
@@ -49,7 +54,6 @@ export function TouchButton({
     primary: 'bg-blue-600 text-white shadow-lg shadow-blue-900/20',
     secondary: 'bg-zinc-800 text-zinc-300 border border-white/5',
     danger: 'bg-red-500/10 text-red-500 border border-red-500/20',
-    // Requirement 12: Luxury Gradient with Gold Glow
     luxury: 'bg-gradient-to-br from-[#D4AF37] via-[#F2D479] to-[#AA8A2E] text-black font-black uppercase tracking-wider shadow-[0_4px_15px_rgba(212,175,55,0.3)]',
     outline: 'bg-transparent border-2 border-luxury-gold text-luxury-gold',
     ghost: 'bg-white/5 text-white hover:bg-white/10'
@@ -57,15 +61,15 @@ export function TouchButton({
 
   return (
     <motion.button
-      whileTap={{ scale: 0.96 }} // Smoother than manual setTimeout
-      whileHover={{ scale: disabled ? 1 : 1.01 }}
+      whileTap={{ scale: 0.95 }} 
+      whileHover={{ scale: disabled ? 1 : 1.02 }}
       onClick={handleClick}
       disabled={disabled}
       className={`
         relative overflow-hidden
         px-6 py-4 rounded-[1.2rem] 
-        text-sm font-bold transition-colors
-        disabled:opacity-50 disabled:grayscale
+        text-sm font-bold transition-all
+        disabled:opacity-40 disabled:grayscale
         flex items-center justify-center gap-2
         ${fullWidth ? 'w-full' : ''}
         ${variants[variant]}
@@ -73,9 +77,9 @@ export function TouchButton({
       `}
       {...props}
     >
-      {/* Glossy Overlay for Luxury Variant */}
+      {/* Luxury Reflection Effect */}
       {variant === 'luxury' && (
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-white/20 via-transparent to-transparent opacity-30 pointer-events-none" />
       )}
       
       <span className="relative z-10">{children}</span>
