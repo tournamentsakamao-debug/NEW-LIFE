@@ -1,266 +1,742 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useAuthStore } from '@/store/authStore'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
-  ArrowLeft, Plus, Edit, Trash2, Crown, Calendar, 
-  Users, Trophy, Map as MapIcon, ShieldCheck, Zap, X
-} from 'lucide-react'
-import { toast } from 'sonner'
-import { format } from 'date-fns'
+  ArrowLeft, Plus, Edit, Trash2, Trophy, Clock, 
+  Users, Play, Award, XCircle, Calendar 
+} from 'lucide-react';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import TextArea from '@/components/ui/TextArea';
+import Modal from '@/components/ui/Modal';
+import { supabase, type Tournament, type TournamentParticipant, type Profile } from '@/lib/supabase';
+import { formatCurrency, formatDate, formatTime } from '@/lib/utils';
+import toast from 'react-hot-toast';
 
 export default function AdminTournamentsPage() {
-  const router = useRouter()
-  const { user: admin, loading: authLoading } = useAuthStore()
-  const [tournaments, setTournaments] = useState<any[]>([])
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const router = useRouter();
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [selectedWinner, setSelectedWinner] = useState<string>('');
+  const [payoutMethod, setPayoutMethod] = useState<'auto' | 'manual'>('auto');
 
-  // Requirement 1.3: Expanded Form Data
+  // Form states
   const [formData, setFormData] = useState({
-    name: '',
-    game_name: 'BGMI',
-    game_mode: 'solo',
-    map_name: 'Erangel', // Added
-    version: '3.1',     // Added
-    slots_total: 100,
+    title: '',
+    game_name: '',
+    game_mode: 'Solo' as 'Solo' | 'Duo' | 'Squad',
+    slots_total: 50,
     join_fee: 0,
     prize_money: 0,
     tournament_date: '',
     tournament_time: '',
     rules: '',
+    banner_main: '',
+    banner_detail: '',
+    is_password_protected: false,
+    tournament_password: '',
     is_luxury: false,
-    banner_url: ''
-  })
+    game_id: '',
+    game_password: '',
+  });
 
   useEffect(() => {
-    if (!authLoading && (!admin || !admin.isAdmin)) {
-      router.push('/login')
-    } else {
-      loadTournaments()
-    }
-  }, [admin, authLoading])
+    checkAuth();
+    fetchTournaments();
+  }, []);
 
-  const loadTournaments = async () => {
-    const { data } = await supabase
-      .from('tournaments')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (data) setTournaments(data)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-
+  const checkAuth = async () => {
     try {
-      const payload = {
-        ...formData,
-        slots_total: Number(formData.slots_total),
-        join_fee: Number(formData.join_fee),
-        prize_money: Number(formData.prize_money),
-        status: 'upcoming'
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
       }
 
-      const { error } = editingId 
-        ? await supabase.from('tournaments').update(payload).eq('id', editingId)
-        : await supabase.from('tournaments').insert([payload])
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
 
-      if (error) throw error
-      
-      toast.success(editingId ? 'Updated!' : 'Created!')
-      setShowCreateModal(false)
-      setEditingId(null)
-      loadTournaments()
-    } catch (err: any) {
-      toast.error(err.message)
+      if (profile?.role !== 'admin') {
+        router.push('/dashboard');
+        return;
+      }
+    } catch (error) {
+      console.error('Auth error:', error);
+      router.push('/login');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this tournament? All joins will be lost.')) return
-    const { error } = await supabase.from('tournaments').delete().eq('id', id)
-    if (!error) {
-      toast.success('Deleted')
-      loadTournaments()
+  const fetchTournaments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setTournaments(data || []);
+    } catch (error) {
+      console.error('Error fetching tournaments:', error);
+      toast.error('Failed to load tournaments');
     }
-  }
+  };
 
-  if (authLoading) return <div className="min-h-screen bg-black" />
+  const fetchParticipants = async (tournamentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('tournament_participants')
+        .select('*, profiles(username)')
+        .eq('tournament_id', tournamentId)
+        .order('slot_number', { ascending: true });
+
+      if (error) throw error;
+      setParticipants(data || []);
+    } catch (error) {
+      console.error('Error fetching participants:', error);
+      toast.error('Failed to load participants');
+    }
+  };
+
+  const handleCreateTournament = async () => {
+    try {
+      if (!formData.title || !formData.game_name || !formData.tournament_date || !formData.tournament_time) {
+        toast.error('Please fill in all required fields');
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      // Calculate auto_cancel_at (tournament time + 2 minutes)
+      const tournamentDateTime = new Date(`${formData.tournament_date}T${formData.tournament_time}`);
+      const autoCancelAt = new Date(tournamentDateTime.getTime() + 2 * 60 * 1000);
+
+      const { error } = await supabase
+        .from('tournaments')
+        .insert({
+          ...formData,
+          created_by: session.user.id,
+          auto_cancel_at: autoCancelAt.toISOString(),
+          status: 'upcoming',
+        });
+
+      if (error) throw error;
+
+      toast.success('Tournament created successfully!');
+      setShowCreateModal(false);
+      resetForm();
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Create tournament error:', error);
+      toast.error(error.message || 'Failed to create tournament');
+    }
+  };
+
+  const handleUpdateTournament = async () => {
+    try {
+      if (!selectedTournament) return;
+
+      const { error } = await supabase
+        .from('tournaments')
+        .update(formData)
+        .eq('id', selectedTournament.id);
+
+      if (error) throw error;
+
+      // If time/date changed, notify participants
+      if (
+        formData.tournament_date !== selectedTournament.tournament_date ||
+        formData.tournament_time !== selectedTournament.tournament_time
+      ) {
+        const { data: participants } = await supabase
+          .from('tournament_participants')
+          .select('user_id')
+          .eq('tournament_id', selectedTournament.id);
+
+        if (participants) {
+          for (const participant of participants) {
+            await supabase
+              .from('notifications')
+              .insert({
+                user_id: participant.user_id,
+                title: 'Tournament Time Changed',
+                message: `Due to technical error, tournament time/date has been changed. New schedule: ${formatDate(formData.tournament_date)} at ${formatTime(formData.tournament_time)}`,
+                type: 'warning',
+              });
+          }
+        }
+      }
+
+      toast.success('Tournament updated successfully!');
+      setShowEditModal(false);
+      setSelectedTournament(null);
+      resetForm();
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Update tournament error:', error);
+      toast.error(error.message || 'Failed to update tournament');
+    }
+  };
+
+  const handleDeleteTournament = async (tournamentId: string) => {
+    if (!confirm('Are you sure you want to delete this tournament?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('tournaments')
+        .delete()
+        .eq('id', tournamentId);
+
+      if (error) throw error;
+
+      toast.success('Tournament deleted successfully!');
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Delete tournament error:', error);
+      toast.error(error.message || 'Failed to delete tournament');
+    }
+  };
+
+  const handleCancelTournament = async (tournament: Tournament) => {
+    if (!confirm('Are you sure you want to cancel this tournament? All participants will be refunded.')) return;
+
+    try {
+      const { error } = await supabase.rpc('cancel_tournament_refund', {
+        t_id: tournament.id,
+        reason: 'Cancelled by admin',
+      });
+
+      if (error) throw error;
+
+      toast.success('Tournament cancelled and all participants refunded!');
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Cancel tournament error:', error);
+      toast.error(error.message || 'Failed to cancel tournament');
+    }
+  };
+
+  const handleStartTournament = async (tournamentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('tournaments')
+        .update({ status: 'live' })
+        .eq('id', tournamentId);
+
+      if (error) throw error;
+
+      toast.success('Tournament started!');
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Start tournament error:', error);
+      toast.error(error.message || 'Failed to start tournament');
+    }
+  };
+
+  const handleDeclareWinner = async () => {
+    if (!selectedTournament || !selectedWinner) {
+      toast.error('Please select a winner');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.rpc('distribute_tournament_prize', {
+        t_id: selectedTournament.id,
+        winner_u_id: selectedWinner,
+        prize_amt: selectedTournament.prize_money,
+        is_auto: payoutMethod === 'auto',
+      });
+
+      if (error) throw error;
+
+      toast.success('Winner declared and prize distributed!');
+      setShowWinnerModal(false);
+      setSelectedTournament(null);
+      setSelectedWinner('');
+      fetchTournaments();
+    } catch (error: any) {
+      console.error('Declare winner error:', error);
+      toast.error(error.message || 'Failed to declare winner');
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      game_name: '',
+      game_mode: 'Solo',
+      slots_total: 50,
+      join_fee: 0,
+      prize_money: 0,
+      tournament_date: '',
+      tournament_time: '',
+      rules: '',
+      banner_main: '',
+      banner_detail: '',
+      is_password_protected: false,
+      tournament_password: '',
+      is_luxury: false,
+      game_id: '',
+      game_password: '',
+    });
+  };
+
+  const openEditModal = (tournament: Tournament) => {
+    setSelectedTournament(tournament);
+    setFormData({
+      title: tournament.title,
+      game_name: tournament.game_name,
+      game_mode: tournament.game_mode,
+      slots_total: tournament.slots_total,
+      join_fee: tournament.join_fee,
+      prize_money: tournament.prize_money,
+      tournament_date: tournament.tournament_date,
+      tournament_time: tournament.tournament_time,
+      rules: tournament.rules || '',
+      banner_main: tournament.banner_main || '',
+      banner_detail: tournament.banner_detail || '',
+      is_password_protected: tournament.is_password_protected,
+      tournament_password: tournament.tournament_password || '',
+      is_luxury: tournament.is_luxury,
+      game_id: tournament.game_id || '',
+      game_password: tournament.game_password || '',
+    });
+    setShowEditModal(true);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      {/* --- LUXURY HEADER --- */}
-      <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 p-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+    <div className="min-h-screen p-4">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-full"><ArrowLeft size={20}/></button>
-            <h1 className="text-xl font-black text-gold-gradient uppercase tracking-tighter">Event Manager</h1>
+            <Button variant="secondary" onClick={() => router.back()}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <h1 className="text-2xl font-bold">Tournament Management</h1>
           </div>
-          <button 
-            onClick={() => { setEditingId(null); setShowCreateModal(true); }}
-            className="flex items-center gap-2 bg-luxury-gold text-black px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-[0_10px_20px_rgba(212,175,55,0.2)] active:scale-95 transition-all"
-          >
-            <Plus size={16} /> New Match
-          </button>
+          <Button variant="success" onClick={() => setShowCreateModal(true)}>
+            <Plus className="w-5 h-5 mr-2" />
+            Create Tournament
+          </Button>
         </div>
-      </header>
 
-      <main className="p-4 max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <AnimatePresence>
-            {tournaments.map((t) => (
-              <motion.div 
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                key={t.id}
-                className={`group relative overflow-hidden rounded-[2.5rem] border p-6 transition-all ${t.is_luxury ? 'bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border-luxury-gold/30' : 'bg-[#111] border-white/5 hover:border-white/10'}`}
-              >
-                {t.is_luxury && <div className="absolute top-0 right-0 p-4"><Crown className="text-luxury-gold" size={20} /></div>}
-                
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-black tracking-tight">{t.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-luxury-gold bg-luxury-gold/10 px-2 py-0.5 rounded-md">{t.game_name}</span>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{t.map_name} • {t.game_mode}</span>
+        {/* Tournaments List */}
+        <div className="space-y-4">
+          {tournaments.length === 0 ? (
+            <Card className="text-center py-12">
+              <Trophy className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-400">No tournaments yet</p>
+            </Card>
+          ) : (
+            tournaments.map((tournament) => (
+              <Card key={tournament.id} luxury={tournament.is_luxury}>
+                <div className="space-y-4">
+                  {/* Tournament Info */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-white">{tournament.title}</h3>
+                      <p className="text-sm text-gray-400">
+                        {tournament.game_name} • {tournament.game_mode}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          {formatDate(tournament.tournament_date)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" />
+                          {formatTime(tournament.tournament_time)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-4 h-4" />
+                          {tournament.slots_joined}/{tournament.slots_total}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${
+                        tournament.status === 'live' ? 'bg-red-500' :
+                        tournament.status === 'upcoming' ? 'bg-blue-500' :
+                        tournament.status === 'finished' ? 'bg-green-500' :
+                        'bg-gray-500'
+                      }`}>
+                        {tournament.status.toUpperCase()}
+                      </div>
+                      <p className="text-sm text-gray-400 mt-2">
+                        Entry: {formatCurrency(tournament.join_fee)}
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        Prize: {formatCurrency(tournament.prize_money)}
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-3 gap-2 mb-6">
-                  <Stat label="Prize" value={`₹${t.prize_money}`} color="text-green-500" />
-                  <Stat label="Entry" value={`₹${t.join_fee}`} color="text-luxury-gold" />
-                  <Stat label="Slots" value={`${t.slots_joined}/${t.slots_total}`} color="text-white" />
-                </div>
+                  {/* Actions */}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTournament(tournament);
+                        fetchParticipants(tournament.id);
+                        setShowParticipantsModal(true);
+                      }}
+                    >
+                      <Users className="w-4 h-4 mr-1" />
+                      View Participants ({tournament.slots_joined})
+                    </Button>
 
-                <div className="flex items-center justify-between border-t border-white/5 pt-4">
-                  <div className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-2">
-                    <Calendar size={12} /> {format(new Date(t.tournament_date), 'dd MMM')} @ {t.tournament_time}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => { setEditingId(t.id); setFormData(t); setShowCreateModal(true); }} className="p-2 bg-white/5 rounded-lg text-gray-400 hover:text-white"><Edit size={16}/></button>
-                    <button onClick={() => handleDelete(t.id)} className="p-2 bg-red-500/10 rounded-lg text-red-500 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16}/></button>
+                    {tournament.status === 'upcoming' && (
+                      <>
+                        <Button
+                          variant="success"
+                          size="sm"
+                          onClick={() => handleStartTournament(tournament.id)}
+                        >
+                          <Play className="w-4 h-4 mr-1" />
+                          Start
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openEditModal(tournament)}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                      </>
+                    )}
+
+                    {tournament.status === 'live' && (
+                      <Button
+                        variant="luxury"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTournament(tournament);
+                          fetchParticipants(tournament.id);
+                          setShowWinnerModal(true);
+                        }}
+                      >
+                        <Award className="w-4 h-4 mr-1" />
+                        Declare Winner
+                      </Button>
+                    )}
+
+                    {tournament.status !== 'finished' && tournament.status !== 'cancelled' && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleCancelTournament(tournament)}
+                      >
+                        <XCircle className="w-4 h-4 mr-1" />
+                        Cancel & Refund
+                      </Button>
+                    )}
+
+                    {tournament.status === 'upcoming' && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleDeleteTournament(tournament.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+              </Card>
+            ))
+          )}
         </div>
-      </main>
 
-      {/* --- CREATE/EDIT DRAWER --- */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-end">
-            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setShowCreateModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-            <motion.div 
-              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-              className="relative w-full max-w-xl h-full bg-[#0f0f0f] border-l border-white/10 p-8 overflow-y-auto no-scrollbar"
+        {/* Create/Edit Tournament Modal */}
+        <Modal
+          isOpen={showCreateModal || showEditModal}
+          onClose={() => {
+            setShowCreateModal(false);
+            setShowEditModal(false);
+            setSelectedTournament(null);
+            resetForm();
+          }}
+          title={showCreateModal ? 'Create Tournament' : 'Edit Tournament'}
+        >
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            <Input
+              label="Tournament Title *"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            />
+
+            <Input
+              label="Game Name *"
+              value={formData.game_name}
+              onChange={(e) => setFormData({ ...formData, game_name: e.target.value })}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Game Mode *</label>
+              <select
+                className="w-full px-4 py-3 rounded-xl glass bg-white/5 border border-white/10 text-white"
+                value={formData.game_mode}
+                onChange={(e) => setFormData({ ...formData, game_mode: e.target.value as any })}
+              >
+                <option value="Solo">Solo</option>
+                <option value="Duo">Duo</option>
+                <option value="Squad">Squad</option>
+              </select>
+            </div>
+
+            <Input
+              label="Total Slots *"
+              type="number"
+              value={formData.slots_total}
+              onChange={(e) => setFormData({ ...formData, slots_total: parseInt(e.target.value) })}
+            />
+
+            <Input
+              label="Join Fee (₹)"
+              type="number"
+              value={formData.join_fee}
+              onChange={(e) => setFormData({ ...formData, join_fee: parseFloat(e.target.value) })}
+            />
+
+            <Input
+              label="Prize Money (₹)"
+              type="number"
+              value={formData.prize_money}
+              onChange={(e) => setFormData({ ...formData, prize_money: parseFloat(e.target.value) })}
+            />
+
+            <Input
+              label="Date *"
+              type="date"
+              value={formData.tournament_date}
+              onChange={(e) => setFormData({ ...formData, tournament_date: e.target.value })}
+            />
+
+            <Input
+              label="Time *"
+              type="time"
+              value={formData.tournament_time}
+              onChange={(e) => setFormData({ ...formData, tournament_time: e.target.value })}
+            />
+
+            <TextArea
+              label="Rules"
+              rows={4}
+              value={formData.rules}
+              onChange={(e) => setFormData({ ...formData, rules: e.target.value })}
+            />
+
+            <Input
+              label="Main Banner URL"
+              value={formData.banner_main}
+              onChange={(e) => setFormData({ ...formData, banner_main: e.target.value })}
+            />
+
+            <Input
+              label="Detail Banner URL"
+              value={formData.banner_detail}
+              onChange={(e) => setFormData({ ...formData, banner_detail: e.target.value })}
+            />
+
+            <div className="flex items-center gap-3 p-4 bg-white/5 rounded-xl">
+              <input
+                type="checkbox"
+                id="password-protected"
+                checked={formData.is_password_protected}
+                onChange={(e) => setFormData({ ...formData, is_password_protected: e.target.checked })}
+                className="w-5 h-5 rounded"
+              />
+              <label htmlFor="password-protected" className="text-white cursor-pointer">
+                Password Protected
+              </label>
+            </div>
+
+            {formData.is_password_protected && (
+              <Input
+                label="Tournament Password"
+                value={formData.tournament_password}
+                onChange={(e) => setFormData({ ...formData, tournament_password: e.target.value })}
+              />
+            )}
+
+            <div className="flex items-center gap-3 p-4 bg-white/5 rounded-xl">
+              <input
+                type="checkbox"
+                id="luxury"
+                checked={formData.is_luxury}
+                onChange={(e) => setFormData({ ...formData, is_luxury: e.target.checked })}
+                className="w-5 h-5 rounded"
+              />
+              <label htmlFor="luxury" className="text-white cursor-pointer">
+                Luxury Tournament
+              </label>
+            </div>
+
+            <Input
+              label="Game ID"
+              value={formData.game_id}
+              onChange={(e) => setFormData({ ...formData, game_id: e.target.value })}
+            />
+
+            <Input
+              label="Game Password"
+              value={formData.game_password}
+              onChange={(e) => setFormData({ ...formData, game_password: e.target.value })}
+            />
+
+            <Button
+              variant="success"
+              size="lg"
+              className="w-full"
+              onClick={showCreateModal ? handleCreateTournament : handleUpdateTournament}
             >
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-2xl font-black uppercase tracking-tighter">{editingId ? 'Edit Match' : 'New Match'}</h2>
-                <button onClick={() => setShowCreateModal(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-4">
-                  <AdminInput label="Match Name" value={formData.name} onChange={v => setFormData({...formData, name: v})} placeholder="Pro Scrims Vol.1" />
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <AdminInput label="Game" value={formData.game_name} onChange={v => setFormData({...formData, game_name: v})} />
-                    <AdminInput label="Map" value={formData.map_name} onChange={v => setFormData({...formData, map_name: v})} placeholder="Erangel" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <AdminSelect label="Mode" value={formData.game_mode} options={['solo', 'duo', 'squad']} onChange={v => setFormData({...formData, game_mode: v})} />
-                    <AdminInput label="Game Version" value={formData.version} onChange={v => setFormData({...formData, version: v})} placeholder="3.1" />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <AdminInput label="Slots" type="number" value={formData.slots_total} onChange={v => setFormData({...formData, slots_total: v})} />
-                    <AdminInput label="Entry (₹)" type="number" value={formData.join_fee} onChange={v => setFormData({...formData, join_fee: v})} />
-                    <AdminInput label="Prize (₹)" type="number" value={formData.prize_money} onChange={v => setFormData({...formData, prize_money: v})} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <AdminInput label="Date" type="date" value={formData.tournament_date} onChange={v => setFormData({...formData, tournament_date: v})} />
-                    <AdminInput label="Time" type="time" value={formData.tournament_time} onChange={v => setFormData({...formData, tournament_time: v})} />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Rules & Info</label>
-                    <textarea 
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 mt-2 outline-none focus:border-luxury-gold h-32 text-sm"
-                      value={formData.rules} onChange={e => setFormData({...formData, rules: e.target.value})}
-                    />
-                  </div>
-
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({...formData, is_luxury: !formData.is_luxury})}
-                    className={`w-full p-4 rounded-2xl border flex items-center justify-center gap-3 transition-all ${formData.is_luxury ? 'bg-luxury-gold/10 border-luxury-gold text-luxury-gold' : 'bg-white/5 border-white/10 text-gray-500'}`}
-                  >
-                    <Crown size={18} /> <span className="text-xs font-black uppercase tracking-widest">Luxury Match</span>
-                  </button>
-                </div>
-
-                <button 
-                  type="submit" disabled={loading}
-                  className="w-full py-5 bg-luxury-gold text-black rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-gold-500/20 active:scale-95 transition-all"
-                >
-                  {loading ? 'Processing...' : (editingId ? 'Update Tournament' : 'Publish Tournament')}
-                </button>
-              </form>
-            </motion.div>
+              {showCreateModal ? 'Create Tournament' : 'Update Tournament'}
+            </Button>
           </div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
+        </Modal>
 
-// Custom Sub-components for Admin UI
-function Stat({ label, value, color }: any) {
-  return (
-    <div className="bg-black/40 p-3 rounded-2xl border border-white/5">
-      <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest">{label}</p>
-      <p className={`text-sm font-bold mt-1 ${color}`}>{value}</p>
-    </div>
-  )
-}
+        {/* Participants Modal */}
+        <Modal
+          isOpen={showParticipantsModal}
+          onClose={() => {
+            setShowParticipantsModal(false);
+            setSelectedTournament(null);
+            setParticipants([]);
+          }}
+          title="Tournament Participants"
+        >
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {participants.length === 0 ? (
+              <p className="text-center text-gray-400 py-8">No participants yet</p>
+            ) : (
+              participants.map((participant: any) => (
+                <div key={participant.id} className="p-4 bg-white/5 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-white">Slot #{participant.slot_number}</p>
+                    <p className="text-sm text-gray-400">{participant.profiles.username}</p>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-gray-400">
+                      Game Name: <span className="text-white">{participant.game_name}</span>
+                    </p>
+                    <p className="text-gray-400">
+                      Game UID: <span className="text-white font-mono">{participant.game_uid}</span>
+                    </p>
+                    {participant.user_message && (
+                      <p className="text-gray-400">
+                        Message: <span className="text-white">{participant.user_message}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Modal>
 
-function AdminInput({ label, value, onChange, type = 'text', placeholder }: any) {
-  return (
-    <div>
-      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{label}</label>
-      <input 
-        type={type} placeholder={placeholder} value={value} 
-        onChange={e => onChange(e.target.value)}
-        className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-luxury-gold text-sm transition-all"
-      />
-    </div>
-  )
-}
+        {/* Winner Selection Modal */}
+        <Modal
+          isOpen={showWinnerModal}
+          onClose={() => {
+            setShowWinnerModal(false);
+            setSelectedTournament(null);
+            setSelectedWinner('');
+          }}
+          title="Declare Winner"
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Select Winner *</label>
+              <select
+                className="w-full px-4 py-3 rounded-xl glass bg-white/5 border border-white/10 text-white"
+                value={selectedWinner}
+                onChange={(e) => setSelectedWinner(e.target.value)}
+              >
+                <option value="">-- Select Winner --</option>
+                {participants.map((participant: any) => (
+                  <option key={participant.id} value={participant.user_id}>
+                    Slot #{participant.slot_number} - {participant.profiles.username} ({participant.game_name})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-function AdminSelect({ label, value, options, onChange }: any) {
-  return (
-    <div>
-      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">{label}</label>
-      <select 
-        value={value} onChange={e => onChange(e.target.value)}
-        className="w-full bg-white/5 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-luxury-gold text-sm appearance-none"
-      >
-        {options.map((o: any) => <option key={o} value={o} className="bg-black">{o.toUpperCase()}</option>)}
-      </select>
-    </div>
-  )
-}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Payout Method</label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+                  <input
+                    type="radio"
+                    id="auto-payout"
+                    name="payout"
+                    checked={payoutMethod === 'auto'}
+                    onChange={() => setPayoutMethod('auto')}
+                    className="w-5 h-5"
+                  />
+                  <label htmlFor="auto-payout" className="text-white cursor-pointer flex-1">
+                    Automatic Payout (Instant)
+                  </label>
+                </div>
+                <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+                  <input
+                    type="radio"
+                    id="manual-payout"
+                    name="payout"
+                    checked={payoutMethod === 'manual'}
+                    onChange={() => setPayoutMethod('manual')}
+                    className="w-5 h-5"
+                  />
+                  <label htmlFor="manual-payout" className="text-white cursor-pointer flex-1">
+                    Manual Payout (Later)
+                  </label>
+                </div>
+              </div>
+            </div>
 
+            <div className="p-4 bg-green-500/20 border border-green-500/50 rounded-xl">
+              <p className="text-green-400 text-sm">
+                Prize Amount: <strong>{formatCurrency(selectedTournament?.prize_money || 0)}</strong>
+              </p>
+            </div>
+
+            <Button
+              variant="luxury"
+              size="lg"
+              className="w-full"
+              onClick={handleDeclareWinner}
+              disabled={!selectedWinner}
+            >
+              <Award className="w-5 h-5 mr-2" />
+              Declare Winner & Distribute Prize
+            </Button>
+          </div>
+        </Modal>
+      </div>
+    </div>
+  );
+              }
