@@ -1,86 +1,53 @@
-'use client'
-import { useEffect, useRef } from 'react'
-import { Inter } from 'next/font/google'
-import './globals.css'
-import { Toaster } from 'sonner'
-import { supabase } from '@/lib/supabase'
-import { usePathname, useRouter } from 'next/navigation'
+import type { Metadata } from 'next';
+import './globals.css';
+import { Toaster } from 'react-hot-toast';
 
-const inter = Inter({ subsets: ['latin'] })
+export const metadata: Metadata = {
+  title: "Admin's Tournament - Professional eSports Platform",
+  description: 'Join tournaments, win prizes, and compete with the best players',
+  icons: {
+    icon: '/branding/favicon.ico',
+  },
+};
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const bgMusicRef = useRef<HTMLAudioElement | null>(null)
-  const pathname = usePathname()
-  const router = useRouter()
-
-  useEffect(() => {
-    const syncSystemState = async () => {
-      // 1. Fetch Admin Settings (Sound, Maintenance, UPI)
-      const { data: settings } = await supabase
-        .from('system_settings')
-        .select('bg_music_on, maintenance_mode')
-        .single()
-
-      // 2. Maintenance Logic (Bypass for Admin)
-      if (settings?.maintenance_mode) {
-        const isAdminPath = pathname.startsWith('/admin')
-        const isLoginPage = pathname === '/login' || pathname === '/admin/login'
-        
-        // Agar maintenance on hai aur user admin nahi hai, toh maintenance page par bhejo
-        if (!isAdminPath && !isLoginPage && pathname !== '/maintenance') {
-          router.push('/maintenance')
-        }
-      }
-
-      // 3. Background Music Logic (Admin Controlled)
-      if (settings?.bg_music_on && bgMusicRef.current) {
-        const playMusic = () => {
-          bgMusicRef.current?.play().catch(() => {})
-          window.removeEventListener('click', playMusic)
-        }
-        window.addEventListener('click', playMusic)
-      } else if (!settings?.bg_music_on && bgMusicRef.current) {
-        bgMusicRef.current.pause()
-      }
-    }
-
-    syncSystemState()
-  }, [pathname, router])
-
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
-        <title>eSports Luxury Pro</title>
-        {/* Requirement: Favicon from public/branding */}
         <link rel="icon" href="/branding/favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <meta name="theme-color" content="#0f0c29" />
       </head>
-      <body className={`${inter.className} bg-[#050505] text-white min-h-screen selection:bg-[#D4AF37] selection:text-black`}>
-        
-        {/* Global Sound Assets */}
-        <audio ref={bgMusicRef} id="bg-music" src="/sounds/bg.mp3" loop />
-        <audio id="click-sound" src="/sounds/click.mp3" preload="auto" />
-        <audio id="win-sound" src="/sounds/win.mp3" preload="auto" />
-
-        {/* Dynamic Content */}
-        <main className="relative z-10">
-          {children}
-        </main>
-
-        {/* Notifications (Toast) */}
-        <Toaster 
-          position="top-center" 
-          richColors 
-          theme="dark" 
+      <body className="min-h-screen">
+        {children}
+        <Toaster
+          position="top-center"
           toastOptions={{
-            style: { background: '#0A0A0A', border: '1px solid #ffffff10' }
+            duration: 3000,
+            style: {
+              background: '#1a1a2e',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            },
+            success: {
+              iconTheme: {
+                primary: '#10b981',
+                secondary: '#fff',
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: '#ef4444',
+                secondary: '#fff',
+              },
+            },
           }}
         />
-        
-        {/* Professional Vignette Overlay */}
-        <div className="fixed inset-0 pointer-events-none z-50 shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]" />
       </body>
     </html>
-  )
+  );
 }
-
