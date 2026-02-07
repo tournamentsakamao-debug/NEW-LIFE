@@ -5,6 +5,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// --- INTERFACES ---
+
 export interface Profile {
   id: string
   username: string
@@ -13,6 +15,7 @@ export interface Profile {
   wallet_balance: number
   is_banned: boolean
   banned_at?: string
+  avatar_url?: string // Added for Luxury Profile feel
   created_at: string
 }
 
@@ -21,6 +24,8 @@ export interface Tournament {
   name: string
   game_name: string
   game_mode: 'solo' | 'duo' | 'squad'
+  map_name: string // Requirement 1.3: Map detail (Erangel, Miramar, etc.)
+  version: string  // Requirement 1.3: Game version (3.1, 3.2, etc.)
   slots_total: number
   slots_joined: number
   join_fee: number
@@ -33,6 +38,8 @@ export interface Tournament {
   password?: string
   is_luxury: boolean
   status: 'upcoming' | 'live' | 'finished' | 'cancelled'
+  room_id?: string // Requirement 1.7: Shared before match starts
+  room_pass?: string // Requirement 1.7: Shared before match starts
   created_at: string
 }
 
@@ -46,6 +53,7 @@ export interface Transaction {
   admin_message?: string
   rejection_reason?: string
   utr?: string
+  screenshot_url?: string // Requirement 2.2: Payment verification
   created_at: string
 }
 
@@ -66,4 +74,20 @@ export interface SystemSettings {
   sound_enabled: boolean
   background_music_enabled: boolean
   app_logo?: string
+  upi_id?: string // Requirement 2.2: Admin's payment ID
+  qr_url?: string // Requirement 2.2: Admin's payment QR
 }
+
+// Requirement 1.8: New interface for participants tracking
+export interface Participant {
+  id: string
+  tournament_id: string
+  user_id: string
+  game_uid: string
+  game_name: string
+  slot_number: number
+  status: 'joined' | 'eliminated' | 'winner'
+  kills: number
+  created_at: string
+}
+
