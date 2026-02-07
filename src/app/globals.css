@@ -2,70 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --luxury-gold: #D4AF37;
+  --luxury-gold-dark: #B8960E;
+  --luxury-black: #050505;
+  --luxury-gray: #1A1A1A;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent; /* Requirement 12: Mobile touch feedback remove */
 }
 
 body {
-  -webkit-tap-highlight-color: transparent;
+  background-color: var(--luxury-black);
+  color: white;
+  overflow-x: hidden;
+  /* Requirement 11: Prevent text selection for "App" feel */
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* Custom Scrollbar */
+/* --- LUXURY SCROLLBAR --- */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
 }
-
 ::-webkit-scrollbar-track {
-  background: #1A1A1A;
+  background: var(--luxury-black);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #D4AF37;
-  border-radius: 4px;
+  background: linear-gradient(to bottom, transparent, var(--luxury-gold), transparent);
+  border-radius: 10px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #B8960E;
+/* --- ANIMATIONS (Requirement 10 & 12) --- */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
-/* Touch Animations */
-.touch-active {
-  transform: scale(0.95);
-  transition: transform 0.1s ease;
+@keyframes gold-pulse {
+  0% { box-shadow: 0 0 5px rgba(212, 175, 55, 0.2); }
+  100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.6); }
 }
 
-/* Shimmer Effect */
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(212, 175, 55, 0.3) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s linear infinite;
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
 }
 
-/* Glow Effect */
-.glow-gold {
-  box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
-  animation: glow 1.5s ease-in-out infinite alternate;
+/* --- UTILITY CLASSES --- */
+@layer components {
+  /* Luxury Button Style */
+  .btn-luxury {
+    @apply relative overflow-hidden bg-gradient-to-r from-[#D4AF37] to-[#F3CF7A] 
+           text-black font-bold py-3 px-6 rounded-xl active:scale-95 
+           transition-all duration-100 shadow-lg shadow-gold-500/20;
+  }
+
+  /* Glassmorphism Card (Tournament Cards ke liye) */
+  .card-luxury {
+    @apply bg-[#111111] border border-white/5 backdrop-blur-md 
+           rounded-2xl p-4 shadow-xl;
+  }
+
+  /* Gold Text Gradient */
+  .text-gold-gradient {
+    @apply bg-gradient-to-b from-[#F3CF7A] via-[#D4AF37] to-[#B8960E] bg-clip-text text-transparent;
+  }
 }
 
-/* Prevent text selection on buttons */
-button {
-  -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
+/* Requirement 12: Luxury Touch Feedback */
+.touch-scale {
+  @apply active:scale-95 transition-transform duration-75;
 }
+
+/* Luxury Badge (Requirement 2.7) */
+.luxury-badge {
+  background: linear-gradient(45deg, #000, #D4AF37, #000);
+  background-size: 200% auto;
+  animation: shine 3s linear infinite;
+}
+
+@keyframes shine {
+  to { background-position: 200% center; }
+}
+
