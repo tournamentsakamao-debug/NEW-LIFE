@@ -2,168 +2,179 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
-import { supabase, Profile } from '@/lib/supabase'
-import { Card } from '@/components/ui/Card'
-import { TouchButton } from '@/components/ui/TouchButton'
-import { ArrowLeft, Ban, CheckCircle, User } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '@/store/authStore'
+import { supabase } from '@/lib/supabase'
+import { 
+  ArrowLeft, Ban, CheckCircle, User, ShieldAlert, 
+  Search, Filter, Wallet, MoreVertical, Trash2 
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 
 export default function AdminUsersPage() {
   const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
-  const [users, setUsers] = useState<Profile[]>([])
+  const { user: admin, loading: authLoading } = useAuthStore()
+  const [users, setUsers] = useState<any[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
 
+  // Sound Logic (Requirement 13)
+  const playClick = () => {
+    const audio = document.getElementById('click-sound') as HTMLAudioElement
+    if (audio) { audio.currentTime = 0; audio.play() }
+  }
+
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== 'admin')) {
+    if (!authLoading && (!admin || !admin.isAdmin)) {
       router.push('/login')
-    } else if (user) {
+    } else if (admin) {
       loadUsers()
     }
-  }, [user, authLoading, router])
+  }, [admin, authLoading, router])
 
   const loadUsers = async () => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
-
-    if (data) {
-      setUsers(data)
-    }
+    if (data) setUsers(data)
   }
 
-  const handleBanUser = async (userId: string, currentBanStatus: boolean) => {
-    const action = currentBanStatus ? 'unban' : 'ban'
-    if (!confirm(`Are you sure you want to ${action} this user?`)) return
+  // Requirement 6: Secure Ban Logic
+  const handleBanUser = async (userId: string, isBanned: boolean) => {
+    playClick()
+    const action = isBanned ? 'UNBAN' : 'BAN'
+    
+    // Custom Luxury Alert instead of window.confirm
+    if (!window.confirm(`SECURITY ALERT: Confirm ${action} for this user?`)) return
 
     setLoading(true)
     try {
       const { error } = await supabase
         .from('profiles')
         .update({ 
-          is_banned: !currentBanStatus,
-          banned_at: currentBanStatus ? null : new Date().toISOString()
+          is_banned: !isBanned,
+          banned_at: !isBanned ? new Date().toISOString() : null
         })
         .eq('id', userId)
 
       if (error) throw error
 
-      toast.success(`User ${action}ned successfully!`)
+      toast.success(`User ${action} successful.`, {
+        description: !isBanned ? "User will be kicked out on next sync." : "Access restored."
+      })
       loadUsers()
     } catch (error: any) {
-      toast.error(error.message || `Failed to ${action} user`)
+      toast.error("Operation Failed")
     } finally {
       setLoading(false)
     }
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-luxury-gold"></div>
-      </div>
-    )
-  }
+  const filteredUsers = users.filter(u => 
+    u.username.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
-  if (!user || user.role !== 'admin') return null
+  if (authLoading) return <div className="min-h-screen bg-black" />
 
   return (
-    <div className="min-h-screen bg-luxury-black">
-      {/* Header */}
-      <header className="bg-luxury-gray border-b border-luxury-lightGray sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4">
+    <div className="min-h-screen bg-[#050505] text-white">
+      {/* --- STICKY HEADER --- */}
+      <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 p-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/admin')}
-              className="p-2 hover:bg-luxury-lightGray rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-6 h-6 text-white" />
+            <button onClick={() => { playClick(); router.back(); }} className="p-2 bg-white/5 rounded-full touch-scale">
+              <ArrowLeft size={20} />
             </button>
-            <h1 className="text-2xl font-bold text-white">Manage Users</h1>
+            <h1 className="text-xl font-black text-gold-gradient uppercase tracking-tighter">User Database</h1>
+          </div>
+          <div className="px-3 py-1 bg-luxury-gold/10 border border-luxury-gold/20 rounded-full">
+            <span className="text-[10px] text-luxury-gold font-bold uppercase tracking-widest">{users.length} Total</span>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
-        <div className="mb-6">
-          <p className="text-gray-400">Total Users: {users.length}</p>
+      <main className="p-4 max-w-4xl mx-auto">
+        {/* --- SEARCH BAR --- */}
+        <div className="relative mb-6">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+          <input 
+            type="text"
+            placeholder="Search by username..."
+            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-luxury-gold/50 transition-all text-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
-        {users.length === 0 ? (
-          <Card>
-            <p className="text-gray-400 text-center py-8">No users found</p>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {users.map((userProfile) => (
-              <Card key={userProfile.id} className={userProfile.is_banned ? 'border-red-600/30' : ''}>
+        {/* --- USERS LIST --- */}
+        <div className="space-y-3">
+          <AnimatePresence>
+            {filteredUsers.map((u) => (
+              <motion.div 
+                layout
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                key={u.id}
+                className={`p-5 rounded-[2rem] border transition-all ${
+                  u.is_banned ? 'bg-red-500/5 border-red-500/20' : 'bg-[#111] border-white/5 hover:border-white/10'
+                }`}
+              >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-3 rounded-lg ${
-                      userProfile.role === 'admin' ? 'bg-luxury-gold/20' :
-                      userProfile.is_banned ? 'bg-red-600/20' : 'bg-blue-600/20'
-                    }`}>
-                      <User className={`w-6 h-6 ${
-                        userProfile.role === 'admin' ? 'text-luxury-gold' :
-                        userProfile.is_banned ? 'text-red-400' : 'text-blue-400'
-                      }`} />
+                  <div className="flex items-center gap-4">
+                    {/* Avatar */}
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${u.is_banned ? 'bg-red-500/20 text-red-500' : 'bg-luxury-gold/10 text-luxury-gold'}`}>
+                      <User size={24} />
                     </div>
+                    
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-white font-bold">{userProfile.username}</h3>
-                        {userProfile.role === 'admin' && (
-                          <span className="px-2 py-1 bg-luxury-gold/20 text-luxury-gold text-xs font-bold rounded">
-                            ADMIN
-                          </span>
-                        )}
-                        {userProfile.is_banned && (
-                          <span className="px-2 py-1 bg-red-600/20 text-red-400 text-xs font-bold rounded">
-                            BANNED
-                          </span>
-                        )}
+                        <h3 className="font-bold text-white">{u.username}</h3>
+                        {u.role === 'admin' && <ShieldAlert size={14} className="text-luxury-gold" />}
                       </div>
-                      <p className="text-gray-400 text-sm mt-1">
-                        Joined: {format(new Date(userProfile.created_at), 'MMM dd, yyyy')}
-                      </p>
-                      <p className="text-gray-400 text-sm">
-                        Wallet: ₹{userProfile.wallet_balance}
-                      </p>
-                      {userProfile.banned_at && (
-                        <p className="text-red-400 text-sm">
-                          Banned: {format(new Date(userProfile.banned_at), 'MMM dd, yyyy')}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                          <Wallet size={10} className="text-luxury-gold" /> ₹{u.wallet_balance.toLocaleString()}
+                        </div>
+                        <div className="text-[10px] text-gray-600 font-medium">
+                          Joined {format(new Date(u.created_at), 'MMM yyyy')}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {userProfile.role !== 'admin' && (
-                    <TouchButton
-                      variant={userProfile.is_banned ? 'luxury' : 'danger'}
-                      onClick={() => handleBanUser(userProfile.id, userProfile.is_banned)}
-                      disabled={loading}
-                    >
-                      {userProfile.is_banned ? (
-                        <>
-                          <CheckCircle className="w-5 h-5 mr-2" />
-                          Unban
-                        </>
-                      ) : (
-                        <>
-                          <Ban className="w-5 h-5 mr-2" />
-                          Ban
-                        </>
-                      )}
-                    </TouchButton>
+                  {/* Actions */}
+                  {u.role !== 'admin' && (
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleBanUser(u.id, u.is_banned)}
+                        disabled={loading}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          u.is_banned 
+                          ? 'bg-green-500/10 text-green-500 border border-green-500/20' 
+                          : 'bg-red-500/10 text-red-500 border border-red-500/20 active:scale-90'
+                        }`}
+                      >
+                        {u.is_banned ? 'Restore' : 'Ban User'}
+                      </button>
+                    </div>
                   )}
                 </div>
-              </Card>
+
+                {u.is_banned && (
+                  <div className="mt-4 pt-4 border-t border-red-500/10 flex items-center gap-2 text-red-400">
+                    <ShieldAlert size={12} />
+                    <p className="text-[10px] font-bold uppercase tracking-tighter">
+                      Permanently Restricted since {format(new Date(u.banned_at), 'dd MMM HH:mm')}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
             ))}
-          </div>
-        )}
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   )
-      }
+            }
