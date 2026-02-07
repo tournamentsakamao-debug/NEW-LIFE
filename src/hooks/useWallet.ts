@@ -18,7 +18,6 @@ export function useWallet() {
   async function loadWalletData() {
     if (!user) return
 
-    // Load balance
     const { data: profile } = await supabase
       .from('profiles')
       .select('wallet_balance')
@@ -29,7 +28,6 @@ export function useWallet() {
       setBalance(profile.wallet_balance)
     }
 
-    // Load transactions
     const { data: txns } = await supabase
       .from('transactions')
       .select('*')
@@ -43,11 +41,10 @@ export function useWallet() {
 
   async function requestDeposit(amount: number, utr: string) {
     if (!user) return { success: false, error: 'Not authenticated' }
-
     try {
       setLoading(true)
-
-      // Check last deposit request (24 hour rule)
+      
+      // Check 24 hour rule
       const { data: lastDeposit } = await supabase
         .from('transactions')
         .select('created_at')
@@ -55,7 +52,7 @@ export function useWallet() {
         .eq('type', 'deposit')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle() // changed to maybeSingle to avoid errors if no data
 
       if (lastDeposit) {
         const hoursSince = (Date.now() - new Date(lastDeposit.created_at).getTime()) / (1000 * 60 * 60)
@@ -75,7 +72,6 @@ export function useWallet() {
         }])
 
       if (error) throw error
-
       await loadWalletData()
       return { success: true }
     } catch (error: any) {
@@ -85,7 +81,8 @@ export function useWallet() {
     }
   }
 
-  async function requestWithdrawal(amount: number) {
+  // UPDATED: Now accepts upiId
+  async function requestWithdrawal(amount: number, upiId: string) {
     if (!user) return { success: false, error: 'Not authenticated' }
 
     try {
@@ -103,7 +100,7 @@ export function useWallet() {
         .eq('type', 'withdraw')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
       if (lastWithdraw) {
         const hoursSince = (Date.now() - new Date(lastWithdraw.created_at).getTime()) / (1000 * 60 * 60)
@@ -118,7 +115,8 @@ export function useWallet() {
           user_id: user.id,
           amount,
           type: 'withdraw',
-          status: 'pending'
+          status: 'pending',
+          user_upi_id: upiId // <--- Data ab yahan se save hoga
         }])
 
       if (error) throw error
@@ -134,20 +132,16 @@ export function useWallet() {
 
   async function joinTournament(tournamentId: string, fee: number, gameUid: string, message?: string) {
     if (!user) return { success: false, error: 'Not authenticated' }
-
     try {
       setLoading(true)
-
-      const { data, error } = await supabase.rpc('join_tournament_final', {
+      const { error } = await supabase.rpc('join_tournament_final', {
         t_id: tournamentId,
         u_id: user.id,
         fee,
         g_uid: gameUid,
         admin_msg: message || ''
       })
-
       if (error) throw error
-
       updateBalance(-fee)
       await loadWalletData()
       return { success: true }
@@ -167,4 +161,5 @@ export function useWallet() {
     joinTournament,
     refreshWallet: loadWalletData
   }
-}
+                }
+    
