@@ -27,11 +27,4 @@ A complete tournament management system with wallet integration, real-time chat,
 - **Backend**: Supabase (PostgreSQL + Auth)
 - **State Management**: Zustand
 - **UI**: Framer Motion, React Hot Toast
-- **Deployment**: Vercel / Cloudflare
-
-## 🛠️ Setup Instructions
-
-### 1. Clone Repository
-```bash
-git clone <your-repo-url>
-cd admins-tournament
+- **Deployment**: Vercel / Cloudflare 
