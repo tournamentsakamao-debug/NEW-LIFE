@@ -1,85 +1,85 @@
-'use client'
+'use client';
 
-import { useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { X } from 'lucide-react'
+import { cn } from '@/lib/utils';
+import { useSound } from '@/hooks/useSound';
+import { X } from 'lucide-react';
+import { useEffect } from 'react';
+import Button from './Button';
 
 interface ModalProps {
-  isOpen: boolean
-  onClose: () => void
-  title?: string
-  children: React.ReactNode
-  size?: 'sm' | 'md' | 'lg'
+  isOpen: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+  showCloseButton?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
-  
-  // Requirement 13: Sound Feedback (Modal Open sound)
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  className,
+  showCloseButton = true,
+}: ModalProps) {
+  const { playClick } = useSound();
+
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden'
-      const audio = new Audio('/sounds/modal-open.mp3')
-      audio.volume = 0.2
-      audio.play().catch(() => {}) // Ignore if browser blocks auto-play
+      document.body.style.overflow = 'hidden';
     } else {
-      document.body.style.overflow = 'unset'
+      document.body.style.overflow = 'unset';
     }
-    return () => { document.body.style.overflow = 'unset' }
-  }, [isOpen])
 
-  const maxWidths = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl'
-  }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleClose = () => {
+    playClick();
+    onClose();
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      handleClose();
+    }
+  };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden">
-          {/* Backdrop with Blur */}
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/80 backdrop-blur-md"
-          />
-
-          {/* Modal Container */}
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`relative bg-[#0F0F0F] rounded-[2.5rem] ${maxWidths[size]} w-full max-h-[85vh] overflow-hidden border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)]`}
-          >
-            {/* Header logic */}
-            <div className="flex items-center justify-between p-6 bg-gradient-to-b from-white/5 to-transparent">
-              {title ? (
-                <h2 className="text-xl font-black uppercase tracking-tighter text-gold-gradient italic">
-                  {title}
-                </h2>
-              ) : <div />}
-              
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 fade-in"
+      onClick={handleBackdropClick}
+    >
+      <div
+        className={cn(
+          'glass rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto',
+          'transform transition-all duration-300 scale-100',
+          className
+        )}
+      >
+        {/* Header */}
+        {(title || showCloseButton) && (
+          <div className="flex items-center justify-between p-6 border-b border-white/10">
+            {title && <h2 className="text-2xl font-bold gradient-text">{title}</h2>}
+            {showCloseButton && (
               <button
-                onClick={onClose}
-                className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-90"
+                onClick={handleClose}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors"
               >
-                <X className="w-5 h-5 text-luxury-gold" />
+                <X className="w-6 h-6" />
               </button>
-            </div>
+            )}
+          </div>
+        )}
 
-            {/* Content Area */}
-            <div className="p-6 overflow-y-auto custom-scrollbar">
-              {children}
-            </div>
-
-            {/* Optional Glow Decor */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-luxury-gold to-transparent opacity-50" />
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  )
+        {/* Content */}
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
 }
