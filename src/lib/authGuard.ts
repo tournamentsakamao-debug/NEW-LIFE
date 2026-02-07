@@ -1,93 +1,76 @@
-import { supabase } from './supabase'
-import { isAdminEmail } from './permissions'
+import { supabase } from './supabase';
 
-/**
- * Requirement 15: Password/Passcode Utilities
- * Building these functions here to fix "Attempted import error" in Vercel.
- */
-export const hashPassword = async (password: string): Promise<string> => {
-  // Simple encoding for build success. Use bcrypt for high-security production.
-  return btoa(password);
-};
-
-export const verifyPassword = async (password: string, storedHash: string): Promise<boolean> => {
-  const hashedInput = btoa(password);
-  return hashedInput === storedHash || password === storedHash;
-};
-
-/**
- * ⚠️ Note: SHA-256 for passwords on client-side is better than plain text, 
- * but Supabase Auth (Auth.signUp) automatically handles bcrypt on server-side.
- */
+export async function getSession() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return session;
+}
 
 export async function getCurrentUser() {
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-  
-  if (sessionError || !session) {
-    if (typeof window !== 'undefined') localStorage.removeItem('userId')
-    return null
-  }
+  try {
+    const session = await getSession();
+    if (!session) return null;
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', session.user.id)
-    .single()
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
 
-  if (error || !data) return null
-  
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('userId', data.id)
-  }
-  
-  // Requirement 3.1: Inject isAdmin status based on Email + DB Role
-  return {
-    ...data,
-    isAdmin: data.role === 'admin' || isAdminEmail(session.user.email)
+    if (error) throw error;
+    return profile;
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return null;
   }
 }
 
-export async function checkAuth() {
-  const user = await getCurrentUser()
-  
+export async function requireAuth() {
+  const user = await getCurrentUser();
   if (!user) {
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login'
-    }
-    return null
+    throw new Error('Authentication required');
   }
-  
-  // Requirement 3.1: Global Ban Logic
-  if (user.is_banned) {
-    if (typeof window !== 'undefined') {
-      await supabase.auth.signOut()
-      localStorage.clear()
-      window.location.href = '/login?error=banned'
-    }
-    return null
-  }
-  
-  return user
+  return user;
 }
 
-export async function checkAdminAuth() {
-  const user = await checkAuth()
-  
-  // Secure Admin Check
-  if (!user || !user.isAdmin) {
-    if (typeof window !== 'undefined') {
-      window.location.href = '/dashboard'
-    }
-    return null
+export async function requireAdmin() {
+  const user = await requireAuth();
+  if (user.role !== 'admin') {
+    throw new Error('Admin access required');
   }
-  return user
+  return user;
 }
 
-/**
- * Requirement 12: Sound & Vibrations check during auth actions
- */
-export const triggerAuthFeedback = (success: boolean) => {
-  if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-    navigator.vibrate(success ? 10 : [50, 30, 50])
+export async function checkMaintenanceMode() {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('maintenance_mode')
+      .single();
+
+    if (error) throw error;
+    return data?.maintenance_mode || false;
+  } catch (error) {
+    console.error('Error checking maintenance mode:', error);
+    return false;
+  }
+}
+
+export async function isUserBanned(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('is_banned, banned_reason')
+      .eq('id', userId)
+      .single();
+
+    if (error) throw error;
+    return {
+      isBanned: data?.is_banned || false,
+      reason: data?.banned_reason || '',
+    };
+  } catch (error) {
+    console.error('Error checking ban status:', error);
+    return { isBanned: false, reason: '' };
   }
 }
