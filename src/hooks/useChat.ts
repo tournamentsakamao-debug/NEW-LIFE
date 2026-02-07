@@ -1,106 +1,129 @@
-import { useState, useEffect, useCallback } from 'react'
-import { supabase, Chat, SystemSettings } from '@/lib/supabase'
-import { useAuthStore } from '@/store/authStore'
-import { toast } from 'sonner'
+'use client';
 
-export function useChat(targetUserId?: string) {
-  const { user } = useAuthStore()
-  const [messages, setMessages] = useState<Chat[]>([])
-  const [settings, setSettings] = useState<SystemSettings | null>(null)
-  const [loading, setLoading] = useState(false)
+import { useState, useEffect } from 'react';
+import { supabase, type Chat } from '@/lib/supabase';
+import toast from 'react-hot-toast';
+import { useSound } from './useSound';
 
-  // 1. Load System Settings (Real-time check for chat availability)
-  const loadSettings = useCallback(async () => {
-    const { data } = await supabase.from('system_settings').select('*').single()
-    if (data) setSettings(data)
-  }, [])
+export function useChat(userId: string) {
+  const [messages, setMessages] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
+  const { playClick } = useSound();
 
-  // 2. Load Messages with specific logic for Admin/User
-  const loadMessages = useCallback(async () => {
-    if (!user) return
-    
-    // Agar targetUserId hai (Admin side), toh us specific user ke chats fetch karo
-    // Agar nahi hai (User side), toh current user ke chats fetch karo
-    const chatOwnerId = targetUserId || user.id
-
-    const { data, error } = await supabase
-      .from('chats')
-      .select('*')
-      .eq('user_id', chatOwnerId)
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      console.error('Chat load error:', error)
-    } else if (data) {
-      setMessages(data)
-    }
-  }, [user, targetUserId])
-
-  // 3. Real-time Subscription with "Optimistic" Feel
   useEffect(() => {
-    if (!user) return
+    fetchMessages();
+    checkChatEnabled();
 
-    loadMessages()
-    loadSettings()
-
-    const channel = supabase
-      .channel(`chat-room-${targetUserId || user.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chats',
-        filter: `user_id=eq.${targetUserId || user.id}`
-      }, (payload) => {
-        // Naya message aane par puri list load karne ke bajaye append karein
-        setMessages((prev) => [...prev, payload.new as Chat])
-        
-        // Agar sound enabled hai toh pop sound bajayein (Requirement 13)
-        if (settings?.sound_enabled) {
-          const audio = new Audio('/sounds/message.mp3')
-          audio.play().catch(() => {})
+    // Subscribe to new messages
+    const subscription = supabase
+      .channel('chat_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chats',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new as Chat]);
         }
-      })
-      .subscribe()
+      )
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel)
+      subscription.unsubscribe();
+    };
+  }, [userId]);
+
+  const fetchMessages = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages(data || []);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [user, targetUserId, loadMessages, loadSettings, settings?.sound_enabled])
+  };
 
-  // 4. Send Message Logic
-  async function sendMessage(content: string) {
-    if (!user) return { success: false }
+  const checkChatEnabled = async () => {
+    try {
+      const { data: settings } = await supabase
+        .from('system_settings')
+        .select('chat_enabled')
+        .single();
 
-    // Check if chat is allowed
-    if (!settings?.chat_enabled && user.role !== 'admin') {
-      toast.error('Admin has temporarily disabled live support.')
-      return { success: false }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('chat_enabled, has_chat_appointment')
+        .eq('id', userId)
+        .single();
+
+      const isEnabled = 
+        settings?.chat_enabled && 
+        profile?.chat_enabled &&
+        (settings?.chat_enabled || profile?.has_chat_appointment);
+
+      setChatEnabled(isEnabled);
+    } catch (error) {
+      console.error('Error checking chat status:', error);
     }
+  };
 
+  const sendMessage = async (content: string) => {
+    try {
+      playClick();
+      
+      if (!chatEnabled) {
+        toast.error('Admin is busy, you are not able to chat now');
+        return false;
+      }
+
+      const { error } = await supabase
+        .from('chats')
+        .insert({
+          user_id: userId,
+          sender: 'user',
+          content: content,
+        });
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error('Failed to send message');
+      return false;
+    }
+  };
+
+  const markAsRead = async (messageIds: string[]) => {
     try {
       const { error } = await supabase
         .from('chats')
-        .insert([{
-          user_id: targetUserId || user.id,
-          content,
-          sender: user.role === 'admin' ? 'admin' : 'user',
-          is_read: false
-        }])
+        .update({ is_read: true })
+        .in('id', messageIds);
 
-      if (error) throw error
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message)
-      return { success: false }
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
     }
-  }
+  };
 
   return {
     messages,
-    settings,
     loading,
+    chatEnabled,
     sendMessage,
-    chatEnabled: settings?.chat_enabled || false,
-    isAdmin: user?.role === 'admin'
-  }
-  }
+    markAsRead,
+    refreshMessages: fetchMessages,
+  };
+      }
