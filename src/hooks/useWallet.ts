@@ -1,156 +1,169 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useAuthStore } from '@/store/authStore'
-import { useWalletStore } from '@/store/walletStore'
-import { toast } from 'sonner'
+import { useState } from 'react';
+import { supabase, type Transaction } from '@/lib/supabase';
+import toast from 'react-hot-toast';
+import { useSound } from './useSound';
 
-export function useWallet() {
-  const { user } = useAuthStore()
-  const { balance, setBalance, updateBalance } = useWalletStore()
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const [adminUpi, setAdminUpi] = useState('') // New state for Admin UPI
+export function useWallet(userId: string) {
+  const [loading, setLoading] = useState(false);
+  const { playClick } = useSound();
 
-  // Helper for sounds
-  const playSound = (type: 'click' | 'success') => {
-    const audio = new Audio(type === 'click' ? '/sounds/click.mp3' : '/sounds/win.mp3')
-    audio.volume = 0.3
-    audio.play().catch(() => {})
-  }
-
-  useEffect(() => {
-    if (user) {
-      loadWalletData()
-      fetchAdminSettings() // Fetch Admin UPI on load
-      
-      const channel = supabase
-        .channel(`wallet-${user.id}`)
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'transactions',
-          filter: `user_id=eq.${user.id}`
-        }, () => {
-          loadWalletData()
-        })
-        .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
-    }
-  }, [user])
-
-  // Admin Settings Fetching logic
-  async function fetchAdminSettings() {
-    const { data } = await supabase.from('system_settings').select('upi_id').single()
-    if (data) setAdminUpi(data.upi_id)
-  }
-
-  async function loadWalletData() {
-    if (!user) return
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('wallet_balance')
-      .eq('id', user.id)
-      .single()
-
-    if (profile) setBalance(profile.wallet_balance)
-
-    const { data: txns } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (txns) setTransactions(txns)
-  }
-
-  async function requestDeposit(amount: number, utr: string, screenshotFile?: File) {
-    if (!user) return { success: false }
-    playSound('click')
-    
+  const getBalance = async () => {
     try {
-      setLoading(true)
-      // Deposit Cooldown Check (24 Hours)
-      const { data: lastDeposit } = await supabase
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('wallet_balance')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+      return data?.wallet_balance || 0;
+    } catch (error) {
+      console.error('Error getting balance:', error);
+      return 0;
+    }
+  };
+
+  const getTransactions = async (): Promise<Transaction[]> => {
+    try {
+      const { data, error } = await supabase
         .from('transactions')
-        .select('created_at')
-        .eq('user_id', user.id)
-        .eq('type', 'deposit')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-      if (lastDeposit) {
-        const diff = (Date.now() - new Date(lastDeposit.created_at).getTime()) / (1000 * 60 * 60)
-        if (diff < 24) throw new Error(`Wait ${Math.ceil(24 - diff)} hours for next request`)
-      }
-
-      let screenshotUrl = ''
-      if (screenshotFile) {
-        const fileName = `${user.id}-${Date.now()}`
-        const { error: uploadError, data } = await supabase.storage
-          .from('payment-proofs')
-          .upload(fileName, screenshotFile)
-        
-        if (uploadError) throw uploadError
-        screenshotUrl = data.path
-      }
-
-      const { error } = await supabase.from('transactions').insert([{
-        user_id: user.id, amount, type: 'deposit', status: 'pending', utr, screenshot_url: screenshotUrl
-      }])
-
-      if (error) throw error
-      playSound('success')
-      toast.success('Deposit request sent!')
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message)
-      return { success: false }
-    } finally {
-      setLoading(false)
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error getting transactions:', error);
+      return [];
     }
-  }
+  };
 
-  async function joinTournament(t_id: string, fee: number, g_uid: string, slot: number) {
-    if (!user) return { success: false }
-    playSound('click')
-    
+  const canAddMoney = async () => {
     try {
-      setLoading(true)
-      // RPC handles the secure transaction
-      const { error } = await supabase.rpc('join_tournament_secure', {
-        target_t_id: t_id,
-        target_u_id: user.id,
-        entry_fee: fee,
-        player_g_uid: g_uid,
-        selected_slot: slot
-      })
+      const { data, error } = await supabase
+        .rpc('can_user_add_money', { u_id: userId });
 
-      if (error) throw error
+      if (error) throw error;
       
-      updateBalance(-fee)
-      playSound('success')
-      toast.success('Joined Successfully!')
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message || 'Balance insufficient or slot taken')
-      return { success: false }
-    } finally {
-      setLoading(false)
+      const nextAllowedTime = new Date(data);
+      const now = new Date();
+      
+      return {
+        canRequest: now >= nextAllowedTime,
+        nextAllowedTime: nextAllowedTime.toISOString(),
+      };
+    } catch (error) {
+      console.error('Error checking add money eligibility:', error);
+      return { canRequest: true, nextAllowedTime: new Date().toISOString() };
     }
-  }
+  };
+
+  const canWithdraw = async () => {
+    try {
+      const { data, error } = await supabase
+        .rpc('can_user_withdraw', { u_id: userId });
+
+      if (error) throw error;
+      
+      const nextAllowedTime = new Date(data);
+      const now = new Date();
+      
+      return {
+        canRequest: now >= nextAllowedTime,
+        nextAllowedTime: nextAllowedTime.toISOString(),
+      };
+    } catch (error) {
+      console.error('Error checking withdrawal eligibility:', error);
+      return { canRequest: true, nextAllowedTime: new Date().toISOString() };
+    }
+  };
+
+  const requestAddMoney = async (amount: number, utrNumber: string) => {
+    try {
+      playClick();
+      setLoading(true);
+
+      const eligibility = await canAddMoney();
+      if (!eligibility.canRequest) {
+        toast.error('You can request add money after 5 hours from last request');
+        return false;
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: userId,
+          amount: amount,
+          type: 'add_money',
+          status: 'pending',
+          utr_number: utrNumber,
+          can_request_at: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+        });
+
+      if (error) throw error;
+
+      toast.success('Add money request submitted! Please wait for admin approval.');
+      return true;
+    } catch (error) {
+      console.error('Error requesting add money:', error);
+      toast.error('Failed to submit request');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestWithdrawal = async (amount: number, upiId: string) => {
+    try {
+      playClick();
+      setLoading(true);
+
+      const eligibility = await canWithdraw();
+      if (!eligibility.canRequest) {
+        toast.error('You can request withdrawal after 24 hours from last request');
+        return false;
+      }
+
+      const balance = await getBalance();
+      if (balance < amount) {
+        toast.error('Insufficient balance');
+        return false;
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: userId,
+          amount: amount,
+          type: 'withdraw',
+          status: 'pending',
+          upi_id: upiId,
+          can_request_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+
+      if (error) throw error;
+
+      toast.success('Withdrawal request submitted! Please wait for admin approval.');
+      return true;
+    } catch (error) {
+      console.error('Error requesting withdrawal:', error);
+      toast.error('Failed to submit request');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return {
-    balance,
-    adminUpi, // Now exposed for UI
-    transactions,
     loading,
-    requestDeposit,
-    joinTournament,
-    refreshWallet: loadWalletData
-  }
-    }
-      
+    getBalance,
+    getTransactions,
+    canAddMoney,
+    canWithdraw,
+    requestAddMoney,
+    requestWithdrawal,
+  };
+          }
