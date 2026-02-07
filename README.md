@@ -1,59 +1,37 @@
 # Admin's Tournament - Professional eSports Platform
 
-A complete, production-ready tournament management platform built with Next.js 14, Supabase, and TypeScript.
+A complete tournament management system with wallet integration, real-time chat, and admin controls.
 
 ## 🚀 Features
 
 ### User Features
-- ✅ Unique username & password authentication
-- ✅ Real-time wallet system with deposits/withdrawals
-- ✅ Browse and join tournaments
-- ✅ Secure payment processing
-- ✅ End-to-end encrypted chat with admin
-- ✅ Transaction history tracking
-- ✅ Touch animations & sound effects
-- ✅ Mobile-first responsive design
+- ✅ Unique username + password authentication
+- ✅ Tournament browsing and joining
+- ✅ Wallet system (Add money, Withdraw)
+- ✅ Real-time chat with admin
+- ✅ Transaction history
+- ✅ Notifications
 
 ### Admin Features
-- ✅ Complete tournament management (CRUD)
-- ✅ Transaction approval system
-- ✅ User chat management
-- ✅ System-wide settings control
-- ✅ Maintenance mode toggle
+- ✅ Complete tournament management
+- ✅ User management (Ban, Chat control, Appointments)
+- ✅ Wallet management (Approve/Reject requests)
+- ✅ Global + Personal wallet tracking
 - ✅ Analytics dashboard
-- ✅ Luxury tournament badges
-- ✅ User ban/unban capabilities
+- ✅ System settings (Maintenance mode, Sounds, etc.)
+- ✅ Multi-user chat support
 
-### Security Features
-- ✅ Role-based access control (User/Admin)
-- ✅ SHA-256 password hashing
-- ✅ Race condition prevention on tournament joins
-- ✅ SQL injection protection via Supabase RLS
-- ✅ Transaction validation & fraud prevention
-- ✅ Rate limiting on deposits (24h) and withdrawals (5h)
+## 📦 Tech Stack
 
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS
-- **Backend**: Supabase (PostgreSQL + Auth + Realtime)
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth)
 - **State Management**: Zustand
-- **UI Components**: Custom luxury-themed components
-- **Date Handling**: date-fns
-- **Icons**: Lucide React
-- **Notifications**: Sonner
+- **UI**: Framer Motion, React Hot Toast
+- **Deployment**: Vercel / Cloudflare
 
-## 📦 Installation
+## 🛠️ Setup Instructions
 
-### Prerequisites
-- Node.js 18+ installed
-- Supabase account (free tier works)
-- Git installed
-
-### Step 1: Clone & Install
+### 1. Clone Repository
 ```bash
-# Clone repository
 git clone <your-repo-url>
 cd admins-tournament
-
-# Install dependencies
-npm install
