@@ -1,164 +1,221 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useAuthStore } from '@/store/authStore'
-import { hashPassword, verifyPassword } from '@/lib/authGuard'
-import { isAdminEmail } from '@/lib/permissions' // Ensure this matches your lib file
-import { toast } from 'sonner'
+import { useEffect, useState } from 'react';
+import { supabase, type Profile } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import { useSound } from './useSound';
 
 export function useAuth() {
-  const { user, setUser, logout: storeLogout } = useAuthStore()
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { playClick } = useSound();
 
-  // 1. Sync User Session & Real-time Ban Check
-  const checkUser = useCallback(async () => {
-    try {
-      // Get session from Supabase instead of just localStorage for better security
-      const { data: { session } } = await supabase.auth.getSession()
-      const userId = session?.user?.id || localStorage.getItem('userId')
-      
-      if (!userId) {
-        setLoading(false)
-        return
+  useEffect(() => {
+    checkUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          await fetchUserProfile(session.user.id);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          router.push('/login');
+        }
       }
+    );
 
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await fetchUserProfile(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error checking user:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single()
+        .single();
 
-      if (error || !data) throw new Error('Session expired')
+      if (error) throw error;
 
-      // Requirement 3.1: Immediate Logout if Banned
+      // Check if banned
       if (data.is_banned) {
-        handleLogout('Your account has been suspended.')
-        return
+        toast.error('Your account has been banned: ' + data.banned_reason);
+        await signOut();
+        return;
       }
 
-      // Requirement 12: Sync Admin Status
-      const isUserAdmin = data.role === 'admin' || isAdminEmail(data.email)
-      setUser({ ...data, isAdmin: isUserAdmin })
-      
-    } catch (err: any) {
-      localStorage.removeItem('userId')
-    } finally {
-      setLoading(false)
+      setUser(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      toast.error('Failed to load profile');
     }
-  }, [setUser])
+  };
 
-  useEffect(() => {
-    checkUser()
-
-    // 2. Requirement 2.1: Real-time Profile Listener (Balance/Ban sync)
-    const userId = localStorage.getItem('userId')
-    if (userId) {
-      const channel = supabase
-        .channel(`profile-updates-${userId}`)
-        .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'profiles',
-          filter: `id=eq.${userId}` 
-        }, (payload) => {
-          if (payload.new.is_banned) {
-            handleLogout('Security Alert: Account Banned')
-          } else {
-            // Auto-sync balance & profile
-            const updatedUser = {
-              ...payload.new,
-              isAdmin: payload.new.role === 'admin' || isAdminEmail(payload.new.email)
-            }
-            setUser(updatedUser as any)
-          }
-        })
-        .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
-    }
-  }, [checkUser, setUser])
-
-  const handleLogout = (message?: string) => {
-    if (message) toast.error(message)
-    localStorage.removeItem('userId')
-    storeLogout()
-    if (typeof window !== 'undefined') window.location.href = '/login'
-  }
-
-  // 3. Login Logic with Hashing
-  async function login(username: string, password: string) {
+  const signIn = async (username: string, password: string) => {
     try {
-      const { data: profile, error } = await supabase
+      playClick();
+      setLoading(true);
+
+      // Check maintenance mode
+      const { data: settings } = await supabase
+        .from('system_settings')
+        .select('maintenance_mode')
+        .single();
+
+      if (settings?.maintenance_mode) {
+        // Only allow admin login during maintenance
+        const { data: adminCheck } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('username', username)
+          .single();
+
+        if (adminCheck?.role !== 'admin') {
+          toast.error('App is under maintenance. Please try again later.');
+          return false;
+        }
+      }
+
+      // First, get the user's email from profiles table
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('email, password_hash')
         .eq('username', username)
-        .single()
+        .single();
 
-      if (error || !profile) throw new Error('Invalid credentials')
+      if (profileError || !profile?.email) {
+        toast.error('Invalid username or password');
+        return false;
+      }
 
-      // Requirement 15: Verify Hashed Password
-      const isValid = await verifyPassword(password, profile.password_hash)
-      if (!isValid) throw new Error('Invalid credentials')
-
-      if (profile.is_banned) throw new Error('Access Denied: Banned')
-
-      localStorage.setItem('userId', profile.id)
-      
-      const isUserAdmin = profile.role === 'admin' || isAdminEmail(profile.email)
-      setUser({ ...profile, isAdmin: isUserAdmin })
-      
-      toast.success(`Welcome back, ${profile.username}!`)
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message)
-      return { success: false, error: error.message }
-    }
-  }
-
-  // 4. Signup with Auto-Role Assignment
-  async function signup(username: string, email: string, password: string) {
-    try {
-      const passwordHash = await hashPassword(password)
-      
-      // Permission logic check (Requirement 3.1)
-      const role = isAdminEmail(email) ? 'admin' : 'user'
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert([{
-          username,
-          email,
-          password_hash: passwordHash,
-          role,
-          wallet_balance: 0,
-          is_banned: false
-        }])
-        .select()
-        .single()
+      // Sign in with email and password
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: password,
+      });
 
       if (error) {
-        if (error.code === '23505') throw new Error('Username/Email already exists')
-        throw error
+        toast.error('Invalid username or password');
+        return false;
       }
 
-      localStorage.setItem('userId', data.id)
-      setUser({ ...data, isAdmin: role === 'admin' })
-      toast.success('Account created successfully!')
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message)
-      return { success: false, error: error.message }
+      await fetchUserProfile(data.user.id);
+      toast.success('Logged in successfully!');
+      
+      // Redirect based on role
+      if (user?.role === 'admin') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Sign in error:', error);
+      toast.error('Failed to sign in');
+      return false;
+    } finally {
+      setLoading(false);
     }
-  }
+  };
+
+  const signUp = async (username: string, password: string, email: string) => {
+    try {
+      playClick();
+      setLoading(true);
+
+      // Check if username exists
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('username', username)
+        .single();
+
+      if (existingUser) {
+        toast.error('Username already taken');
+        return false;
+      }
+
+      // Create auth user
+      const { data, error } = await supabase.auth.signUp({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+
+      if (!data.user) {
+        toast.error('Failed to create account');
+        return false;
+      }
+
+      // Create profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          username: username,
+          email: email,
+          role: 'user',
+          wallet_balance: 0,
+        });
+
+      if (profileError) {
+        toast.error('Failed to create profile');
+        return false;
+      }
+
+      toast.success('Account created! Please log in.');
+      router.push('/login');
+      return true;
+    } catch (error) {
+      console.error('Sign up error:', error);
+      toast.error('Failed to sign up');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      playClick();
+      await supabase.auth.signOut();
+      setUser(null);
+      toast.success('Logged out successfully');
+      router.push('/login');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      toast.error('Failed to sign out');
+    }
+  };
 
   return {
     user,
     loading,
-    login,
-    signup,
-    logout: handleLogout,
-    isAdmin: user?.role === 'admin' || (user && isAdminEmail(user.email))
-  }
-      }
-        
+    signIn,
+    signUp,
+    signOut,
+    refreshUser: () => user && fetchUserProfile(user.id),
+  };
+                    }
