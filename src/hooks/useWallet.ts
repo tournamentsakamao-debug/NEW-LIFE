@@ -18,6 +18,7 @@ export function useWallet() {
   async function loadWalletData() {
     if (!user) return
 
+    // Load current balance from profiles
     const { data: profile } = await supabase
       .from('profiles')
       .select('wallet_balance')
@@ -28,6 +29,7 @@ export function useWallet() {
       setBalance(profile.wallet_balance)
     }
 
+    // Load all transaction history
     const { data: txns } = await supabase
       .from('transactions')
       .select('*')
@@ -44,7 +46,7 @@ export function useWallet() {
     try {
       setLoading(true)
       
-      // Check 24 hour rule
+      // 24-hour limit check for deposit
       const { data: lastDeposit } = await supabase
         .from('transactions')
         .select('created_at')
@@ -52,7 +54,7 @@ export function useWallet() {
         .eq('type', 'deposit')
         .order('created_at', { ascending: false })
         .limit(1)
-        .maybeSingle() // changed to maybeSingle to avoid errors if no data
+        .maybeSingle()
 
       if (lastDeposit) {
         const hoursSince = (Date.now() - new Date(lastDeposit.created_at).getTime()) / (1000 * 60 * 60)
@@ -81,7 +83,6 @@ export function useWallet() {
     }
   }
 
-  // UPDATED: Now accepts upiId
   async function requestWithdrawal(amount: number, upiId: string) {
     if (!user) return { success: false, error: 'Not authenticated' }
 
@@ -92,7 +93,7 @@ export function useWallet() {
         throw new Error('Insufficient balance')
       }
 
-      // Check 5 hour rule
+      // 5-hour limit check for withdrawal
       const { data: lastWithdraw } = await supabase
         .from('transactions')
         .select('created_at')
@@ -109,6 +110,7 @@ export function useWallet() {
         }
       }
 
+      // Inserting with user_upi_id
       const { error } = await supabase
         .from('transactions')
         .insert([{
@@ -116,7 +118,7 @@ export function useWallet() {
           amount,
           type: 'withdraw',
           status: 'pending',
-          user_upi_id: upiId // <--- Data ab yahan se save hoga
+          user_upi_id: upiId // <--- Backend column name matches SQL
         }])
 
       if (error) throw error
@@ -161,5 +163,5 @@ export function useWallet() {
     joinTournament,
     refreshWallet: loadWalletData
   }
-                }
-    
+}
+
