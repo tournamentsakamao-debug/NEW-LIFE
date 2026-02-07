@@ -101,10 +101,17 @@ export default function AdminSettingsPage() {
     try {
       setSaving(true);
 
+      const { data: walletData } = await supabase
+        .from('admin_wallet')
+        .select('id')
+        .single();
+
+      if (!walletData) throw new Error('Admin wallet not found');
+
       const { error } = await supabase
         .from('admin_wallet')
         .update({ upi_id: upiId })
-        .eq('id', (await supabase.from('admin_wallet').select('id').single()).data?.id);
+        .eq('id', walletData.id);
 
       if (error) throw error;
 
@@ -296,3 +303,5 @@ export default function AdminSettingsPage() {
         </Card>
       </div>
     </div>
+  );
+  }
