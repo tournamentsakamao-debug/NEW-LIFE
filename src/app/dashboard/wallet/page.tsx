@@ -1,201 +1,383 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useAuthStore } from '@/store/authStore'
-import { useWalletStore } from '@/store/walletStore'
-import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Plus, Landmark, Wallet } from 'lucide-react'
-import { format, differenceInSeconds } from 'date-fns'
-import { toast } from 'sonner'
-import { TouchButton } from '@/components/ui/TouchButton'
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Plus, ArrowDownToLine, Clock } from 'lucide-react';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Modal from '@/components/ui/Modal';
+import WalletBalance from '@/components/wallet/WalletBalance';
+import TransactionHistory from '@/components/wallet/TransactionHistory';
+import { supabase, type Profile } from '@/lib/supabase';
+import { getTimeUntilNextRequest, formatCurrency } from '@/lib/utils';
+import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 export default function WalletPage() {
-  const router = useRouter()
-  const [mounted, setMounted] = useState(false) // FIX: For Prerender issue
-  const { user } = useAuthStore()
-  const { balance, transactions, lastDeposit, lastWithdraw } = useWalletStore()
-
-  const [modalType, setModalType] = useState<'none' | 'deposit' | 'withdraw'>('none')
-  const [adminUpi, setAdminUpi] = useState('loading...')
-  const [amount, setAmount] = useState('')
-  const [utr, setUtr] = useState('')
-  const [userUpi, setUserUpi] = useState('') 
-  const [loading, setLoading] = useState(false)
-
-  const [depTimer, setDepTimer] = useState(0)
-  const [withTimer, setWithTimer] = useState(0)
-
-  // FIX: Build crash rokne ke liye
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const router = useRouter();
+  const [user, setUser] = useState<Profile | null>(null);
+  const [showAddMoneyModal, setShowAddMoneyModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [utrNumber, setUtrNumber] = useState('');
+  const [upiId, setUpiId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [canAddMoney, setCanAddMoney] = useState(true);
+  const [canWithdraw, setCanWithdraw] = useState(true);
+  const [nextAddMoneyTime, setNextAddMoneyTime] = useState('');
+  const [nextWithdrawTime, setNextWithdrawTime] = useState('');
+  const [adminUpiId, setAdminUpiId] = useState('');
 
   useEffect(() => {
-    async function fetchSettings() {
-      const { data } = await supabase.from('system_settings').select('upi_id').single()
-      if (data?.upi_id) setAdminUpi(data.upi_id)
-    }
-    fetchSettings()
-  }, [])
-
-  useEffect(() => {
+    checkAuth();
+    fetchAdminUpiId();
     const interval = setInterval(() => {
-      const now = new Date()
-      if (lastDeposit) {
-        const sec = (5 * 3600) - differenceInSeconds(now, new Date(lastDeposit))
-        setDepTimer(sec > 0 ? sec : 0)
+      if (user) {
+        checkEligibility();
       }
-      if (lastWithdraw) {
-        const sec = (24 * 3600) - differenceInSeconds(now, new Date(lastWithdraw))
-        setWithTimer(sec > 0 ? sec : 0)
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
       }
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [lastDeposit, lastWithdraw])
 
-  if (!mounted) return null // FIX: Build ke waqt blank render karega taaki crash na ho
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600)
-    const m = Math.floor((seconds % 3600) / 60)
-    const s = seconds % 60
-    return `${h}h ${m}s`
-  }
-
-  const handleDeposit = async () => {
-    if (loading || depTimer > 0) return
-    if (!amount || parseFloat(amount) < 10) return toast.error('Min ₹10')
-    if (utr.length < 10) return toast.error('Enter valid UTR')
-
-    setLoading(true)
-    const { error } = await supabase.from('transactions').insert([{
-      user_id: user?.id,
-      amount: parseFloat(amount),
-      utr: utr,
-      type: 'deposit',
-      status: 'pending'
-    }])
-
-    if (!error) {
-      toast.success('Request sent!')
-      setModalType('none')
-      setAmount(''); setUtr('')
+      if (error) throw error;
+      setUser(profile);
+      checkEligibility();
+    } catch (error) {
+      console.error('Auth error:', error);
+      router.push('/login');
     }
-    setLoading(false)
-  }
+  };
+
+  const fetchAdminUpiId = async () => {
+    try {
+      const { data } = await supabase
+        .from('admin_wallet')
+        .select('upi_id')
+        .single();
+
+      setAdminUpiId(data?.upi_id || 'admin@upi');
+    } catch (error) {
+      console.error('Error fetching admin UPI:', error);
+    }
+  };
+
+  const checkEligibility = async () => {
+    if (!user) return;
+
+    try {
+      // Check add money eligibility (5 hours)
+      const { data: addMoneyData } = await supabase
+        .rpc('can_user_add_money', { u_id: user.id });
+
+      const addMoneyTime = new Date(addMoneyData);
+      const nowAddMoney = new Date();
+      setCanAddMoney(nowAddMoney >= addMoneyTime);
+      setNextAddMoneyTime(addMoneyTime.toISOString());
+
+      // Check withdrawal eligibility (24 hours)
+      const { data: withdrawData } = await supabase
+        .rpc('can_user_withdraw', { u_id: user.id });
+
+      const withdrawTime = new Date(withdrawData);
+      const nowWithdraw = new Date();
+      setCanWithdraw(nowWithdraw >= withdrawTime);
+      setNextWithdrawTime(withdrawTime.toISOString());
+    } catch (error) {
+      console.error('Error checking eligibility:', error);
+    }
+  };
+
+  const handleAddMoney = async () => {
+    if (!amount || !utrNumber) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user!.id,
+          amount: amountNum,
+          type: 'add_money',
+          status: 'pending',
+          utr_number: utrNumber,
+          can_request_at: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+        });
+
+      if (error) throw error;
+
+      toast.success('Add money request submitted! Please wait for admin approval.');
+      setShowAddMoneyModal(false);
+      setAmount('');
+      setUtrNumber('');
+      checkEligibility();
+    } catch (error: any) {
+      console.error('Add money error:', error);
+      toast.error(error.message || 'Failed to submit request');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleWithdraw = async () => {
-    if (loading || withTimer > 0) return
-    if (!amount || parseFloat(amount) < 100) return toast.error('Min ₹100')
-    if (!userUpi.includes('@')) return toast.error('Enter valid UPI ID')
-
-    setLoading(true)
-    const { error } = await supabase.from('transactions').insert([{
-      user_id: user?.id,
-      amount: parseFloat(amount),
-      user_upi: userUpi,
-      type: 'withdraw',
-      status: 'pending'
-    }])
-
-    if (!error) {
-      toast.success('Withdrawal request sent!')
-      setModalType('none'); setAmount('')
+    if (!amount || !upiId) {
+      toast.error('Please fill in all fields');
+      return;
     }
-    setLoading(false)
+
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    if (amountNum > user!.wallet_balance) {
+      toast.error('Insufficient balance');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user!.id,
+          amount: amountNum,
+          type: 'withdraw',
+          status: 'pending',
+          upi_id: upiId,
+          can_request_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+
+      if (error) throw error;
+
+      toast.success('Withdrawal request submitted! Please wait for admin approval.');
+      setShowWithdrawModal(false);
+      setAmount('');
+      setUpiId('');
+      checkEligibility();
+    } catch (error: any) {
+      console.error('Withdrawal error:', error);
+      toast.error(error.message || 'Failed to submit request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      <div className="p-4 flex items-center justify-between border-b border-white/5 bg-black/50 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <TouchButton variant="ghost" className="!p-2" onClick={() => router.back()}>
-            <ArrowLeft size={20} />
-          </TouchButton>
-          <img src="/branding/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
-          <h1 className="text-sm font-black italic tracking-widest uppercase">My Vault</h1>
+    <div className="min-h-screen p-4">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <Button variant="secondary" onClick={() => router.back()}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-2xl font-bold">My Wallet</h1>
         </div>
-      </div>
 
-      <main className="p-6">
-        <motion.div className="p-8 rounded-[2.5rem] bg-gradient-to-br from-[#D4AF37] to-[#AA8A2E] text-black shadow-2xl mb-8 relative overflow-hidden">
-          <div className="relative z-10">
-            <p className="text-[10px] uppercase font-black tracking-widest opacity-60">Balance</p>
-            <h2 className="text-5xl font-black italic">₹{balance?.toLocaleString() || 0}</h2>
-            <div className="flex gap-3 mt-10">
-              <TouchButton variant="secondary" className="flex-1 !bg-black !text-white" onClick={() => setModalType('deposit')}>Deposit</TouchButton>
-              <TouchButton variant="outline" className="flex-1 !border-black !text-black" onClick={() => setModalType('withdraw')}>Withdraw</TouchButton>
-            </div>
-          </div>
-        </motion.div>
+        {/* Wallet Balance */}
+        <WalletBalance userId={user.id} />
 
-        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-4 px-2">Transactions</h3>
-        <div className="space-y-3">
-          {/* SAFE CHECK: ?. aur optional render */}
-          {transactions && transactions.length > 0 ? (
-            transactions.map((txn: any) => (
-              <div key={txn.id} className="p-4 bg-white/5 border border-white/5 rounded-2xl flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-xl ${txn.type === 'deposit' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {txn.type === 'deposit' ? <Plus size={18}/> : <Landmark size={18}/>}
-                  </div>
-                  <div>
-                    <p className="text-xs font-black uppercase text-white italic">{txn.type}</p>
-                    <p className="text-[9px] text-zinc-500 font-bold">{txn.created_at ? format(new Date(txn.created_at), 'dd MMM, p') : 'Processing'}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`text-sm font-black ${txn.type === 'deposit' ? 'text-green-500' : 'text-red-500'}`}>₹{txn.amount}</p>
-                  <span className="text-[8px] font-black uppercase opacity-60">{txn.status}</span>
-                </div>
+        {/* Action Buttons */}
+        <div className="grid grid-cols-2 gap-4">
+          <Button
+            variant="success"
+            size="lg"
+            onClick={() => setShowAddMoneyModal(true)}
+            disabled={!canAddMoney}
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Add Money
+            {!canAddMoney && (
+              <div className="text-xs mt-1">
+                {getTimeUntilNextRequest(nextAddMoneyTime, 5)}
               </div>
-            ))
-          ) : (
-            <div className="text-center py-20 opacity-20">
-              <Wallet className="mx-auto mb-2" />
-              <p className="text-[10px] uppercase font-black tracking-widest">No history yet</p>
-            </div>
-          )}
-        </div>
-      </main>
+            )}
+          </Button>
 
-      {/* Modals... (Aapka pura purana modal code yahan rahega) */}
-      <AnimatePresence>
-        {modalType !== 'none' && (
-          <div className="fixed inset-0 z-[100] flex items-end justify-center">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModalType('none')} className="absolute inset-0 bg-black/90 backdrop-blur-md" />
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="relative w-full max-w-md bg-[#0a0a0a] rounded-t-[3rem] p-8 border-t border-white/10">
-               {/* Modal Content remains same as yours */}
-               <h2 className="text-2xl font-black italic uppercase mb-6">{modalType} Funds</h2>
-               {/* ... (rest of your inputs) */}
-               {modalType === 'deposit' ? (
-                 <div className="space-y-4">
-                    <div className="text-center bg-white/5 p-6 rounded-3xl">
-                       <img src="/branding/qr.jpg" className="w-40 h-40 mx-auto rounded-xl mb-4" alt="QR" />
-                       <p className="text-[10px] font-bold text-yellow-500 uppercase">{adminUpi}</p>
-                    </div>
-                    <input type="number" placeholder="Amount" className="w-full bg-white/5 p-5 rounded-2xl" value={amount} onChange={(e)=>setAmount(e.target.value)} />
-                    <input type="text" placeholder="UTR Number" className="w-full bg-white/5 p-5 rounded-2xl" value={utr} onChange={(e)=>setUtr(e.target.value)} />
-                    <TouchButton variant="luxury" fullWidth loading={loading} disabled={depTimer > 0} onClick={handleDeposit}>
-                      {depTimer > 0 ? formatTime(depTimer) : 'Submit Deposit'}
-                    </TouchButton>
-                 </div>
-               ) : (
-                 <div className="space-y-4">
-                    <input type="text" placeholder="Your UPI ID" className="w-full bg-white/5 p-5 rounded-2xl" value={userUpi} onChange={(e)=>setUserUpi(e.target.value)} />
-                    <input type="number" placeholder="Amount" className="w-full bg-white/5 p-5 rounded-2xl" value={amount} onChange={(e)=>setAmount(e.target.value)} />
-                    <TouchButton variant="danger" fullWidth loading={loading} disabled={withTimer > 0} onClick={handleWithdraw}>
-                      {withTimer > 0 ? formatTime(withTimer) : 'Confirm Withdrawal'}
-                    </TouchButton>
-                 </div>
-               )}
-            </motion.div>
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => setShowWithdrawModal(true)}
+            disabled={!canWithdraw || user.wallet_balance <= 0}
+          >
+            <ArrowDownToLine className="w-5 h-5 mr-2" />
+            Withdraw
+            {!canWithdraw && (
+              <div className="text-xs mt-1">
+                {getTimeUntilNextRequest(nextWithdrawTime, 24)}
+              </div>
+            )}
+          </Button>
+        </div>
+
+        {/* Timer Info */}
+        <Card className="bg-blue-500/20 border border-blue-500/50">
+          <div className="flex items-start gap-3">
+            <Clock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-400">
+              <p className="font-semibold mb-1">Transaction Limits:</p>
+              <p>• Add Money: Once every 5 hours</p>
+              <p>• Withdrawal: Once every 24 hours</p>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </Card>
+
+        {/* Transaction History */}
+        <div>
+          <h2 className="text-xl font-bold mb-4">Transaction History</h2>
+          <TransactionHistory userId={user.id} />
+        </div>
+
+        {/* Add Money Modal */}
+        <Modal
+          isOpen={showAddMoneyModal}
+          onClose={() => {
+            setShowAddMoneyModal(false);
+            setAmount('');
+            setUtrNumber('');
+          }}
+          title="Add Money"
+        >
+          <div className="space-y-4">
+            {/* QR Code */}
+            <div className="text-center">
+              <p className="text-sm text-gray-400 mb-2">Scan QR Code to Pay</p>
+              <div className="relative w-48 h-48 mx-auto bg-white p-2 rounded-xl">
+                <Image
+                  src="/branding/qr.jpg"
+                  alt="Payment QR Code"
+                  fill
+                  className="object-contain"
+                />
+              </div>
+              <p className="text-sm text-gray-400 mt-2">
+                UPI ID: <span className="font-mono text-white">{adminUpiId}</span>
+              </p>
+            </div>
+
+            <Input
+              label="Amount *"
+              type="number"
+              placeholder="Enter amount to add"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+
+            <Input
+              label="UTR Number *"
+              type="text"
+              placeholder="Enter transaction UTR number"
+              value={utrNumber}
+              onChange={(e) => setUtrNumber(e.target.value)}
+            />
+
+            <div className="p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-xl">
+              <p className="text-yellow-400 text-sm">
+                Please complete the payment and enter the UTR number above. Your request will be reviewed by admin.
+              </p>
+            </div>
+
+            <Button
+              variant="success"
+              size="lg"
+              className="w-full"
+              onClick={handleAddMoney}
+              loading={loading}
+              disabled={!amount || !utrNumber}
+            >
+              Submit Request
+            </Button>
+          </div>
+        </Modal>
+
+        {/* Withdraw Modal */}
+        <Modal
+          isOpen={showWithdrawModal}
+          onClose={() => {
+            setShowWithdrawModal(false);
+            setAmount('');
+            setUpiId('');
+          }}
+          title="Withdraw Money"
+        >
+          <div className="space-y-4">
+            <div className="p-4 bg-white/5 rounded-xl">
+              <p className="text-sm text-gray-400">Available Balance</p>
+              <p className="text-2xl font-bold text-green-400">
+                {formatCurrency(user.wallet_balance)}
+              </p>
+            </div>
+
+            <Input
+              label="Amount *"
+              type="number"
+              placeholder="Enter amount to withdraw"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              max={user.wallet_balance}
+            />
+
+            <Input
+              label="Your UPI ID *"
+              type="text"
+              placeholder="Enter your UPI ID (e.g., username@paytm)"
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+            />
+
+            <div className="p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-xl">
+              <p className="text-yellow-400 text-sm">
+                Withdrawal requests are processed within 24 hours. Money will be transferred to your UPI ID.
+              </p>
+            </div>
+
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              onClick={handleWithdraw}
+              loading={loading}
+              disabled={!amount || !upiId}
+            >
+              Submit Withdrawal Request
+            </Button>
+          </div>
+        </Modal>
+      </div>
     </div>
-  )
-                                            }
-                
+  );
+        }
