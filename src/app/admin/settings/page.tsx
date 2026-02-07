@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/hooks/useAuth' // FIXED: useAuth hook use karein
 import { supabase } from '@/lib/supabase'
 import { 
   ArrowLeft, Settings as SettingsIcon, Save, ShieldAlert, 
@@ -13,7 +13,8 @@ import { toast } from 'sonner'
 
 export default function AdminSettingsPage() {
   const router = useRouter()
-  const { user: admin, loading: authLoading } = useAuthStore()
+  // FIXED: isAdmin yahan se destructure karein
+  const { user: admin, loading: authLoading, isAdmin } = useAuth() 
   const [loading, setLoading] = useState(false)
   
   const [settings, setSettings] = useState({
@@ -23,21 +24,28 @@ export default function AdminSettingsPage() {
     sound_enabled: true,
     music_enabled: false,
     app_logo: '',
-    upi_id: '', // Requirement 2.2
-    qr_url: ''  // Requirement 2.2
+    upi_id: '', 
+    qr_url: ''  
   })
 
   useEffect(() => {
-    if (!authLoading && (!admin || !admin.isAdmin)) {
-      router.push('/login')
-    } else {
-      loadSettings()
+    // FIXED: isAdmin logic error solved
+    if (!authLoading) {
+      if (!admin || !isAdmin) {
+        router.push('/login')
+      } else {
+        loadSettings()
+      }
     }
-  }, [admin, authLoading])
+  }, [admin, authLoading, isAdmin, router])
 
   const loadSettings = async () => {
-    const { data } = await supabase.from('system_settings').select('*').single()
-    if (data) setSettings(data)
+    const { data, error } = await supabase.from('system_settings').select('*').eq('id', '1').single()
+    if (data) {
+      setSettings(data)
+    } else if (error) {
+      toast.error('Could not load settings')
+    }
   }
 
   const handleSave = async () => {
@@ -45,29 +53,39 @@ export default function AdminSettingsPage() {
     try {
       const { error } = await supabase
         .from('system_settings')
-        .update(settings)
-        .eq('id', settings.id)
+        .update({
+          maintenance_mode: settings.maintenance_mode,
+          chat_enabled: settings.chat_enabled,
+          sound_enabled: settings.sound_enabled,
+          music_enabled: settings.music_enabled,
+          upi_id: settings.upi_id,
+          qr_url: settings.qr_url,
+          app_logo: settings.app_logo
+        })
+        .eq('id', '1')
 
       if (error) throw error
       toast.success('System parameters updated!')
     } catch (err: any) {
-      toast.error(err.message)
+      toast.error(err.message || 'Update failed')
     } finally {
       setLoading(false)
     }
   }
 
-  if (authLoading) return <div className="min-h-screen bg-black" />
+  if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-luxury-gold">Syncing...</div>
 
   return (
     <div className="min-h-screen bg-[#050505] text-white">
       {/* --- HEADER --- */}
       <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 p-4">
         <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-full touch-scale">
+          <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-all">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-xl font-black text-gold-gradient uppercase tracking-tighter">System Configuration</h1>
+          <h1 className="text-xl font-black uppercase tracking-tighter italic">
+            System <span className="text-luxury-gold">Configuration</span>
+          </h1>
         </div>
       </header>
 
@@ -82,7 +100,7 @@ export default function AdminSettingsPage() {
               title="Maintenance Mode"
               desc="Lock all users out of the app"
               checked={settings.maintenance_mode}
-              onChange={(v) => setSettings({...settings, maintenance_mode: v})}
+              onChange={(v: boolean) => setSettings({...settings, maintenance_mode: v})}
               danger
             />
             <SettingToggle 
@@ -90,12 +108,12 @@ export default function AdminSettingsPage() {
               title="Global Chat"
               desc="Enable/Disable support chat"
               checked={settings.chat_enabled}
-              onChange={(v) => setSettings({...settings, chat_enabled: v})}
+              onChange={(v: boolean) => setSettings({...settings, chat_enabled: v})}
             />
           </div>
         </section>
 
-        {/* --- PAYMENT SETTINGS (Req 2.2) --- */}
+        {/* --- PAYMENT SETTINGS --- */}
         <section className="space-y-3">
           <h2 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Payment Gateway (Manual)</h2>
           <div className="bg-[#111] border border-white/5 rounded-[2.5rem] p-6 space-y-4">
@@ -105,7 +123,7 @@ export default function AdminSettingsPage() {
                 <QrCode className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-gold" size={18} />
                 <input 
                   type="text"
-                  value={settings.upi_id}
+                  value={settings.upi_id || ''}
                   onChange={(e) => setSettings({...settings, upi_id: e.target.value})}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-luxury-gold text-sm"
                   placeholder="e.g. admin@upi"
@@ -118,10 +136,10 @@ export default function AdminSettingsPage() {
                 <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-gold" size={18} />
                 <input 
                   type="text"
-                  value={settings.qr_url}
+                  value={settings.qr_url || ''}
                   onChange={(e) => setSettings({...settings, qr_url: e.target.value})}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-luxury-gold text-sm"
-                  placeholder="https://..."
+                  placeholder="https://imgur.com/your-qr.png"
                 />
               </div>
             </div>
@@ -137,27 +155,29 @@ export default function AdminSettingsPage() {
               title="UI Sound Effects"
               desc="Click and transition sounds"
               checked={settings.sound_enabled}
-              onChange={(v) => setSettings({...settings, sound_enabled: v})}
+              onChange={(v: boolean) => setSettings({...settings, sound_enabled: v})}
             />
             <SettingToggle 
               icon={<Music className="text-purple-500" />}
               title="Lobby Music"
               desc="Atmospheric background music"
               checked={settings.music_enabled}
-              onChange={(v) => setSettings({...settings, music_enabled: v})}
+              onChange={(v: boolean) => setSettings({...settings, music_enabled: v})}
             />
           </div>
         </section>
 
         {/* --- SAVE BUTTON --- */}
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={handleSave}
-          disabled={loading}
-          className="w-full py-5 bg-luxury-gold text-black rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-gold-500/20 sticky bottom-6"
-        >
-          {loading ? 'Propagating Changes...' : 'Save Configuration'}
-        </motion.button>
+        <div className="fixed bottom-6 left-0 right-0 px-4 max-w-2xl mx-auto">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleSave}
+            disabled={loading}
+            className="w-full py-5 bg-luxury-gold text-black rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-gold-500/20"
+          >
+            {loading ? 'Propagating...' : 'Save Configuration'}
+          </motion.button>
+        </div>
 
       </main>
     </div>
@@ -184,5 +204,5 @@ function SettingToggle({ icon, title, desc, checked, onChange, danger }: any) {
       </button>
     </div>
   )
-                  }
-            
+            }
+      
