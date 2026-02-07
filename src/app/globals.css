@@ -2,93 +2,197 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --luxury-gold: #D4AF37;
-  --luxury-gold-dark: #B8960E;
-  --luxury-black: #050505;
-  --luxury-gray: #1A1A1A;
-}
-
 * {
+  -webkit-tap-highlight-color: transparent;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent; /* Requirement 12: Mobile touch feedback remove */
 }
 
+html,
 body {
-  background-color: var(--luxury-black);
-  color: white;
+  height: 100%;
+  width: 100%;
   overflow-x: hidden;
-  /* Requirement 11: Prevent text selection for "App" feel */
-  -webkit-touch-callout: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+  color: white;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ef4444;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #dc2626;
+}
+
+/* Touch Animation */
+.touch-active {
+  transform: scale(0.95);
+  transition: transform 0.1s ease;
+}
+
+/* Luxury Badge */
+.luxury-badge {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  animation: glow 2s ease-in-out infinite;
+}
+
+/* Glassmorphism */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Button Ripple Effect */
+@keyframes ripple {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  animation: ripple 0.6s ease-out;
+}
+
+/* Loading Spinner */
+.spinner {
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #ef4444;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Fade In Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Card Hover Effect */
+.card-hover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-hover:active {
+  transform: translateY(2px) scale(0.98);
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Notification Badge */
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  animation: pulse 2s infinite;
+}
+
+/* Tournament Status */
+.status-live {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  animation: pulse 2s infinite;
+}
+
+.status-upcoming {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.status-finished {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.status-cancelled {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+  
+  .container {
+    padding: 0 16px;
+  }
+}
+
+/* Disable text selection on buttons */
+button {
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* --- LUXURY SCROLLBAR --- */
-::-webkit-scrollbar {
-  width: 5px;
-}
-::-webkit-scrollbar-track {
-  background: var(--luxury-black);
-}
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, transparent, var(--luxury-gold), transparent);
-  border-radius: 10px;
-}
-
-/* --- ANIMATIONS --- */
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-@keyframes gold-pulse {
-  0% { box-shadow: 0 0 5px rgba(212, 175, 55, 0.2); }
-  100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.6); }
-}
-
-@keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
-}
-
-@keyframes shine {
-  to { background-position: 200% center; }
-}
-
-/* --- UTILITY CLASSES --- */
-@layer components {
-  /* FIXED: gold-500 replaced with hex code for tailwind compatibility */
-  .btn-luxury {
-    @apply relative overflow-hidden bg-gradient-to-r from-[#D4AF37] to-[#F3CF7A] 
-           text-black font-bold py-3 px-6 rounded-xl active:scale-95 
-           transition-all duration-100 shadow-lg shadow-[#D4AF37]/20;
+/* Safe Area for iOS */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
   }
-
-  /* Glassmorphism Card */
-  .card-luxury {
-    @apply bg-[#111111] border border-white/5 backdrop-blur-md 
-           rounded-2xl p-4 shadow-xl;
-  }
-
-  /* Gold Text Gradient */
-  .text-gold-gradient {
-    @apply bg-gradient-to-b from-[#F3CF7A] via-[#D4AF37] to-[#B8960E] bg-clip-text text-transparent;
-  }
-
-  /* Luxury Badge */
-  .luxury-badge {
-    background: linear-gradient(45deg, #000, #D4AF37, #000);
-    background-size: 200% auto;
-    animation: shine 3s linear infinite;
-  }
-}
-
-/* Luxury Touch Feedback */
-.touch-scale {
-  @apply active:scale-95 transition-transform duration-75;
-}
-
+    }
