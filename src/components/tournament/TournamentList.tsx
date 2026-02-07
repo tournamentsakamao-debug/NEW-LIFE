@@ -6,7 +6,7 @@ import { TournamentCard } from './TournamentCard'
 import { TournamentDetail } from './TournamentDetail'
 import { Tournament } from '@/lib/supabase'
 import { Search, Trophy, PlayCircle, Calendar } from 'lucide-react'
-import SkeletonCard from '@/components/ui/SkeletonCard' // Ensure this path is correct
+import SkeletonCard from '@/components/ui/Skeleton.tsx' // Ensure this path is correct
 import { motion, AnimatePresence } from 'framer-motion'
 
 export function TournamentList() {
