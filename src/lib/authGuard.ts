@@ -1,37 +1,41 @@
 import { supabase } from './supabase'
 
-export async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hash = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const inputHash = await hashPassword(password)
-  return inputHash === hash
-}
+/**
+ * ⚠️ Note: SHA-256 for passwords on client-side is better than plain text, 
+ * but Supabase Auth (Auth.signUp) automatically handles bcrypt on server-side.
+ * It's recommended to use supabase.auth.signInWithPassword instead.
+ */
 
 export async function getCurrentUser() {
-  if (typeof window === 'undefined') return null
+  // 1. Pehle Supabase Auth Session check karein (Secure Way)
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
   
-  const userId = localStorage.getItem('userId')
-  if (!userId) return null
+  if (sessionError || !session) {
+    // Fallback: Agar session nahi hai toh localStorage clear karein
+    if (typeof window !== 'undefined') localStorage.removeItem('userId')
+    return null
+  }
 
+  // 2. Profile fetch karein session user ID se
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', userId)
+    .eq('id', session.user.id)
     .single()
 
   if (error || !data) return null
+  
+  // Sync localStorage for legacy support if needed
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('userId', data.id)
+  }
+  
   return data
 }
 
 export async function checkAuth() {
   const user = await getCurrentUser()
+  
   if (!user) {
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
@@ -39,11 +43,12 @@ export async function checkAuth() {
     return null
   }
   
+  // Requirement 3.1: Global Ban Logic
   if (user.is_banned) {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('userId')
-      alert('Your account has been permanently banned.')
-      window.location.href = '/login'
+      await supabase.auth.signOut()
+      localStorage.clear()
+      window.location.href = '/login?error=banned'
     }
     return null
   }
@@ -53,6 +58,8 @@ export async function checkAuth() {
 
 export async function checkAdminAuth() {
   const user = await checkAuth()
+  
+  // Role-based protection
   if (!user || user.role !== 'admin') {
     if (typeof window !== 'undefined') {
       window.location.href = '/dashboard'
@@ -60,4 +67,13 @@ export async function checkAdminAuth() {
     return null
   }
   return user
+}
+
+/**
+ * Requirement 12: Sound & Vibrations check during auth actions
+ */
+export const triggerAuthFeedback = (success: boolean) => {
+  if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate(success ? 10 : [50, 30, 50])
+  }
 }
