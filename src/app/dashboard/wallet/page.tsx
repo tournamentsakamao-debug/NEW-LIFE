@@ -11,7 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { ArrowLeft, Plus, Minus, Clock, CheckCircle, XCircle, Copy } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { supabase } from '@/lib/supabase' // Make sure this import exists
+import { supabase } from '@/lib/supabase'
 
 export default function WalletPage() {
   const router = useRouter()
@@ -21,26 +21,19 @@ export default function WalletPage() {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false)
   const [amount, setAmount] = useState('')
   const [utr, setUtr] = useState('')
-  const [userUpi, setUserUpi] = useState('') // User's UPI for withdrawal
-  const [adminSettings, setAdminSettings] = useState({ upi: '', qr: '' }) // Admin settings
+  const [userUpi, setUserUpi] = useState('') 
+  
+  // FIX: Admin details ko yahan static (fixed) kar diya hai
+  const [adminSettings] = useState({ 
+    upi: '9876543210@ybl', 
+    qr: '/branding/qr.jpg' 
+  })
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login')
     }
-    fetchAdminSettings()
   }, [user, authLoading, router])
-
-  // Admin ki UPI ID fetch karne ke liye
-  const fetchAdminSettings = async () => {
-    const { data } = await supabase
-      .from('system_settings')
-      .select('admin_upi_id, admin_qr_url')
-      .single()
-    if (data) {
-      setAdminSettings({ upi: data.admin_upi_id, qr: data.admin_qr_url })
-    }
-  }
 
   const copyUpi = () => {
     navigator.clipboard.writeText(adminSettings.upi)
@@ -78,7 +71,7 @@ export default function WalletPage() {
       return
     }
 
-    // Pass userUpi to the hook function
+    // result pass userUpi to useWallet hook
     const result = await requestWithdrawal(parseFloat(amount), userUpi)
     if (result.success) {
       toast.success('Withdrawal request submitted!')
@@ -102,23 +95,16 @@ export default function WalletPage() {
 
   return (
     <div className="min-h-screen bg-luxury-black pb-20">
-      {/* Header */}
       <header className="bg-luxury-gray border-b border-luxury-lightGray sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="p-2 hover:bg-luxury-lightGray rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-6 h-6 text-white" />
-            </button>
-            <h1 className="text-2xl font-bold text-white">Wallet</h1>
-          </div>
+        <div className="container mx-auto px-4 py-4 flex items-center gap-4">
+          <button onClick={() => router.push('/dashboard')} className="p-2 hover:bg-luxury-lightGray rounded-lg transition-colors">
+            <ArrowLeft className="w-6 h-6 text-white" />
+          </button>
+          <h1 className="text-2xl font-bold text-white">Wallet</h1>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        {/* Balance Card */}
         <Card className="mb-6 bg-gradient-to-br from-luxury-gold/10 to-luxury-darkGold/10 border-luxury-gold/30">
           <div className="text-center">
             <p className="text-gray-400 mb-2">Available Balance</p>
@@ -138,7 +124,6 @@ export default function WalletPage() {
           </div>
         </Card>
 
-        {/* Transaction History Section (Keeping your original logic) */}
         <h2 className="text-xl font-bold text-white mb-4">Transaction History</h2>
         {transactions.length === 0 ? (
           <Card><p className="text-gray-400 text-center py-8">No transactions yet</p></Card>
@@ -146,7 +131,6 @@ export default function WalletPage() {
           <div className="space-y-3">
             {transactions.map((txn) => (
               <Card key={txn.id} className="hover:border-luxury-gold/50">
-                {/* Transaction details... (keeping same as your code) */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${
@@ -168,7 +152,9 @@ export default function WalletPage() {
                     <p className={`font-bold ${txn.type === 'deposit' || txn.type === 'win' ? 'text-green-400' : 'text-red-400'}`}>
                       {txn.type === 'deposit' || txn.type === 'win' ? '+' : '-'}₹{txn.amount}
                     </p>
-                    <span className="text-xs text-yellow-400">{txn.status}</span>
+                    <span className={`text-xs ${txn.status === 'completed' ? 'text-green-400' : txn.status === 'pending' ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {txn.status}
+                    </span>
                   </div>
                 </div>
               </Card>
@@ -177,50 +163,49 @@ export default function WalletPage() {
         )}
       </main>
 
-      {/* Deposit Modal (With Admin UPI Display) */}
+      {/* Deposit Modal */}
       <Modal isOpen={showDepositModal} onClose={() => setShowDepositModal(false)} title="Add Money">
         <div className="space-y-4">
           <div className="bg-luxury-lightGray p-4 rounded-lg border border-luxury-gold/20">
-            <p className="text-luxury-gold font-bold mb-2">Admin UPI Details:</p>
+            <p className="text-luxury-gold font-bold mb-2 text-sm uppercase">Admin Payment Details:</p>
             <div className="flex items-center justify-between bg-black/40 p-3 rounded border border-white/10 mb-3">
-              <span className="text-white font-mono text-sm">{adminSettings.upi || 'Loading...'}</span>
-              <button onClick={copyUpi} className="text-luxury-gold hover:text-white"><Copy className="w-4 h-4"/></button>
+              <span className="text-white font-mono text-sm">{adminSettings.upi}</span>
+              <button onClick={copyUpi} className="text-luxury-gold hover:text-white flex items-center gap-1 text-xs">
+                <Copy className="w-4 h-4"/> Copy
+              </button>
             </div>
-            {adminSettings.qr && (
-              <div className="flex justify-center mb-2">
-                <img src={adminSettings.qr} alt="QR Code" className="w-32 h-32 rounded-lg border-2 border-white" />
-              </div>
-            )}
-            <p className="text-[10px] text-gray-500 text-center uppercase">Scan QR or Copy UPI to Pay</p>
+            <div className="flex justify-center mb-2 bg-white p-2 rounded-lg inline-block mx-auto">
+                <img src={adminSettings.qr} alt="QR Code" className="w-40 h-40 object-contain" />
+            </div>
+            <p className="text-[10px] text-gray-500 text-center uppercase mt-2">Scan QR or Copy UPI to Pay</p>
           </div>
 
           <Input type="number" label="Amount (₹)" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          <Input label="UTR / Transaction ID" placeholder="Enter 12 digit UTR" value={utr} onChange={(e) => setUtr(e.target.value)} />
+          <Input label="UTR / Transaction ID" placeholder="12 digit UTR number" value={utr} onChange={(e) => setUtr(e.target.value)} />
 
           <TouchButton variant="luxury" className="w-full" onClick={handleDeposit} disabled={loading}>
-            {loading ? 'Submitting...' : 'Submit Request'}
+            {loading ? 'Submitting...' : 'Submit Deposit Request'}
           </TouchButton>
         </div>
       </Modal>
 
-      {/* Withdraw Modal (With User UPI Input) */}
+      {/* Withdraw Modal */}
       <Modal isOpen={showWithdrawModal} onClose={() => setShowWithdrawModal(false)} title="Withdraw Money">
         <div className="space-y-4">
           <div className="bg-luxury-lightGray p-4 rounded-lg flex justify-between">
-            <span className="text-gray-400">Balance</span>
+            <span className="text-gray-400">Available Balance</span>
             <span className="text-white font-bold">₹{balance}</span>
           </div>
 
-          <Input type="number" label="Withdrawal Amount (₹)" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          
+          <Input type="number" label="Amount (₹)" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
           <Input label="Your UPI ID" placeholder="username@bank" value={userUpi} onChange={(e) => setUserUpi(e.target.value)} />
 
           <div className="p-3 bg-red-600/10 border border-red-600/20 rounded-lg">
-            <p className="text-[11px] text-red-400">⚠️ Ensure UPI ID is correct. Admin is not responsible for wrong transfers.</p>
+            <p className="text-[11px] text-red-400">⚠️ Ensure UPI ID is correct. Admin will send money to this ID only.</p>
           </div>
 
           <TouchButton variant="luxury" className="w-full" onClick={handleWithdraw} disabled={loading}>
-            {loading ? 'Submitting...' : 'Confirm Withdrawal'}
+            {loading ? 'Submitting...' : 'Confirm Withdrawal Request'}
           </TouchButton>
         </div>
       </Modal>
