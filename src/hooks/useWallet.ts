@@ -1,3 +1,5 @@
+'use client'
+
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -9,12 +11,20 @@ export function useWallet() {
   const { balance, setBalance, updateBalance } = useWalletStore()
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [adminUpi, setAdminUpi] = useState('') // New state for Admin UPI
+
+  // Helper for sounds
+  const playSound = (type: 'click' | 'success') => {
+    const audio = new Audio(type === 'click' ? '/sounds/click.mp3' : '/sounds/win.mp3')
+    audio.volume = 0.3
+    audio.play().catch(() => {})
+  }
 
   useEffect(() => {
     if (user) {
       loadWalletData()
+      fetchAdminSettings() // Fetch Admin UPI on load
       
-      // Requirement 2.1: Real-time Transaction Subscription
       const channel = supabase
         .channel(`wallet-${user.id}`)
         .on('postgres_changes', { 
@@ -31,10 +41,14 @@ export function useWallet() {
     }
   }, [user])
 
+  // Admin Settings Fetching logic
+  async function fetchAdminSettings() {
+    const { data } = await supabase.from('system_settings').select('upi_id').single()
+    if (data) setAdminUpi(data.upi_id)
+  }
+
   async function loadWalletData() {
     if (!user) return
-
-    // 1. Fetch Latest Profile Balance
     const { data: profile } = await supabase
       .from('profiles')
       .select('wallet_balance')
@@ -43,7 +57,6 @@ export function useWallet() {
 
     if (profile) setBalance(profile.wallet_balance)
 
-    // 2. Fetch Transaction History with Status
     const { data: txns } = await supabase
       .from('transactions')
       .select('*')
@@ -53,14 +66,13 @@ export function useWallet() {
     if (txns) setTransactions(txns)
   }
 
-  // Requirement 2.2: Modified to support Screenshot Upload
   async function requestDeposit(amount: number, utr: string, screenshotFile?: File) {
-    if (!user) return { success: false, error: 'Auth Required' }
+    if (!user) return { success: false }
+    playSound('click')
     
     try {
       setLoading(true)
-
-      // Time Limit Check
+      // Deposit Cooldown Check (24 Hours)
       const { data: lastDeposit } = await supabase
         .from('transactions')
         .select('created_at')
@@ -72,14 +84,12 @@ export function useWallet() {
 
       if (lastDeposit) {
         const diff = (Date.now() - new Date(lastDeposit.created_at).getTime()) / (1000 * 60 * 60)
-        if (diff < 24) throw new Error(`Next request available in ${Math.ceil(24 - diff)} hours`)
+        if (diff < 24) throw new Error(`Wait ${Math.ceil(24 - diff)} hours for next request`)
       }
 
       let screenshotUrl = ''
-      // Requirement 2.2: Upload proof to Supabase Storage
       if (screenshotFile) {
-        const fileExt = screenshotFile.name.split('.').pop()
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`
+        const fileName = `${user.id}-${Date.now()}`
         const { error: uploadError, data } = await supabase.storage
           .from('payment-proofs')
           .upload(fileName, screenshotFile)
@@ -88,50 +98,13 @@ export function useWallet() {
         screenshotUrl = data.path
       }
 
-      const { error } = await supabase
-        .from('transactions')
-        .insert([{
-          user_id: user.id,
-          amount,
-          type: 'deposit',
-          status: 'pending',
-          utr,
-          screenshot_url: screenshotUrl // Updated column
-        }])
+      const { error } = await supabase.from('transactions').insert([{
+        user_id: user.id, amount, type: 'deposit', status: 'pending', utr, screenshot_url: screenshotUrl
+      }])
 
       if (error) throw error
-      toast.success('Deposit request sent for verification')
-      return { success: true }
-    } catch (error: any) {
-      toast.error(error.message)
-      return { success: false, error: error.message }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function requestWithdrawal(amount: number, upiId: string) {
-    if (!user) return { success: false, error: 'Auth Required' }
-    if (balance < amount) {
-      toast.error('Insufficient Luxury Balance')
-      return { success: false }
-    }
-
-    try {
-      setLoading(true)
-      
-      const { error } = await supabase
-        .from('transactions')
-        .insert([{
-          user_id: user.id,
-          amount,
-          type: 'withdraw',
-          status: 'pending',
-          user_upi_id: upiId
-        }])
-
-      if (error) throw error
-      toast.success('Withdrawal request initiated')
+      playSound('success')
+      toast.success('Deposit request sent!')
       return { success: true }
     } catch (error: any) {
       toast.error(error.message)
@@ -141,14 +114,14 @@ export function useWallet() {
     }
   }
 
-  // Requirement 1.7: Slot-based joining logic
   async function joinTournament(t_id: string, fee: number, g_uid: string, slot: number) {
     if (!user) return { success: false }
+    playSound('click')
     
     try {
       setLoading(true)
-      // RPC call handles atomicity (Balance deduct + Slot book)
-      const { data, error } = await supabase.rpc('join_tournament_secure', {
+      // RPC handles the secure transaction
+      const { error } = await supabase.rpc('join_tournament_secure', {
         target_t_id: t_id,
         target_u_id: user.id,
         entry_fee: fee,
@@ -159,10 +132,11 @@ export function useWallet() {
       if (error) throw error
       
       updateBalance(-fee)
-      toast.success('Welcome to the Tournament!')
+      playSound('success')
+      toast.success('Joined Successfully!')
       return { success: true }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to join')
+      toast.error(error.message || 'Balance insufficient or slot taken')
       return { success: false }
     } finally {
       setLoading(false)
@@ -171,11 +145,12 @@ export function useWallet() {
 
   return {
     balance,
+    adminUpi, // Now exposed for UI
     transactions,
     loading,
     requestDeposit,
-    requestWithdrawal,
     joinTournament,
     refreshWallet: loadWalletData
   }
-}
+    }
+      
