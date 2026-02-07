@@ -8,17 +8,20 @@ export const ADMIN_EMAILS = [
 ]
 
 /**
- * Requirement 3.1: Admin Verification Logic
- * Ye function check karta hai ki kya user privileged admin hai.
+ * Requirement 3.1 & Vercel Fix:
+ * Dono names (isAdminEmail aur isSuperAdmin) export kiye hain taaki build error na aaye.
  */
-export function isSuperAdmin(email: string | undefined): boolean {
+export function isAdminEmail(email: string | undefined | null): boolean {
   if (!email) return false
   return ADMIN_EMAILS.includes(email.toLowerCase())
 }
 
+export function isSuperAdmin(email: string | undefined | null): boolean {
+  return isAdminEmail(email)
+}
+
 /**
  * Requirement 12: Role-Based Access Control (RBAC)
- * Sirf UI par nahi, balki functional level par permissions check karne ke liye.
  */
 export const PERMISSIONS = {
   MANAGE_TOURNAMENTS: 'manage_tournaments',
@@ -34,20 +37,17 @@ export const PERMISSIONS = {
 export function hasAdminPower(user: any): boolean {
   if (!user) return false
   // Dono checks: Role status in DB OR Email whitelist
-  return user.role === 'admin' || isSuperAdmin(user.email)
+  return user.role === 'admin' || isAdminEmail(user.email)
 }
 
 /**
- * Luxury App Security: 
- * Jab admin koi sensitive action kare (jaise payment approve), 
- * tab ye check use karein.
+ * Action Authorization Logic
  */
 export function canPerformAction(user: any, permission: string): boolean {
   if (!hasAdminPower(user)) return false
   
   // Super admins can do everything
-  if (isSuperAdmin(user.email)) return true
+  if (isAdminEmail(user.email)) return true
 
-  // Future-proofing: Yahan specific permissions add kar sakte hain
   return true 
 }
