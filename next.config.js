@@ -13,6 +13,6 @@ const nextConfig = {
       allowedOrigins: ['*'],
     },
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
