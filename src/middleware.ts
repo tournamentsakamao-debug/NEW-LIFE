@@ -6,37 +6,60 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
-  // Session check karo
+  // 1. Session check
   const { data: { session } } = await supabase.auth.getSession()
 
-  // Agar user /admin par jane ki koshish kare
-  if (req.nextUrl.pathname.startsWith('/admin')) {
-    if (!session) {
-      // Login nahi hai toh login page par bhejo
-      return NextResponse.redirect(new URL('/login', req.url))
-    }
+  // 2. System Settings load karo (Maintenance check ke liye)
+  const { data: settings } = await supabase
+    .from('system_settings')
+    .select('maintenance_mode')
+    .eq('id', '1')
+    .single()
 
-    // Database se user ka role check karo (Security Layer)
-    const { data: profile } = await supabase
+  // 3. User Profile load karo (Role aur Ban status ke liye)
+  let profile = null
+  if (session) {
+    const { data } = await supabase
       .from('profiles')
-      .select('is_admin')
+      .select('role, is_banned')
       .eq('id', session.user.id)
       .single()
+    profile = data
+  }
 
-    if (!profile?.is_admin) {
-      // Admin nahi hai toh home par fek do
-      return NextResponse.redirect(new URL('/', req.url))
+  const isAdmin = profile?.role === 'admin'
+  const isMaintenance = settings?.maintenance_mode
+
+  // --- LOGIC 1: BANNED USER CHECK ---
+  if (profile?.is_banned && !req.nextUrl.pathname.startsWith('/banned')) {
+    return NextResponse.redirect(new URL('/banned', req.url))
+  }
+
+  // --- LOGIC 2: ADMIN PANEL PROTECTION ---
+  if (req.nextUrl.pathname.startsWith('/admin')) {
+    if (!session || !isAdmin) {
+      return NextResponse.redirect(new URL('/login', req.url))
     }
   }
 
-  // Maintenance Mode Logic (Optional)
-  // Agar aapne DB mein maintenance ON kiya hai toh yahan se block kar sakte hain
+  // --- LOGIC 3: MAINTENANCE BYPASS (Important!) ---
+  // Agar maintenance ON hai, user ADMIN nahi hai, aur wo login/admin page par nahi hai
+  const isAuthPage = req.nextUrl.pathname.startsWith('/login') || req.nextUrl.pathname.startsWith('/register')
+  const isAdminPage = req.nextUrl.pathname.startsWith('/admin')
+  
+  if (isMaintenance && !isAdmin && !isAuthPage && !isAdminPage && req.nextUrl.pathname !== '/maintenance') {
+    return NextResponse.redirect(new URL('/maintenance', req.url))
+  }
 
   return res
 }
 
-// Sirf in paths par middleware chalega
 export const config = {
-  matcher: ['/admin/:path*', '/wallet/:path*', '/profile/:path*'],
+  matcher: [
+    '/admin/:path*', 
+    '/wallet/:path*', 
+    '/profile/:path*', 
+    '/tournaments/:path*',
+    '/' // Root page par bhi maintenance check chalega
+  ],
 }
-
