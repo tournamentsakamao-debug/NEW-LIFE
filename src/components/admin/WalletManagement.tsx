@@ -61,42 +61,79 @@ export default function WalletManagement() {
         : selectedTransaction.amount;
 
       if (selectedTransaction.type === 'add_money') {
-        // Approve add money
+        // Get current user balance
+        const { data: userData, error: getUserError } = await supabase
+          .from('profiles')
+          .select('wallet_balance')
+          .eq('id', selectedTransaction.user_id)
+          .single();
+
+        if (getUserError) throw getUserError;
+
+        // Update user balance
+        const newBalance = (userData.wallet_balance || 0) + amount;
         const { error: updateError } = await supabase
           .from('profiles')
-          .update({ 
-            wallet_balance: supabase.raw(`wallet_balance + ${amount}`) 
-          })
+          .update({ wallet_balance: newBalance })
           .eq('id', selectedTransaction.user_id);
 
         if (updateError) throw updateError;
 
+        // Get current global balance
+        const { data: walletData, error: getWalletError } = await supabase
+          .from('admin_wallet')
+          .select('global_balance')
+          .single();
+
+        if (getWalletError) throw getWalletError;
+
         // Update global wallet
+        const newGlobalBalance = (walletData.global_balance || 0) + amount;
         const { error: walletError } = await supabase
           .from('admin_wallet')
-          .update({ 
-            global_balance: supabase.raw(`global_balance + ${amount}`) 
-          })
+          .update({ global_balance: newGlobalBalance })
           .eq('id', adminWallet?.id);
 
         if (walletError) throw walletError;
+
       } else if (selectedTransaction.type === 'withdraw') {
-        // Approve withdrawal
+        // Get current user balance
+        const { data: userData, error: getUserError } = await supabase
+          .from('profiles')
+          .select('wallet_balance')
+          .eq('id', selectedTransaction.user_id)
+          .single();
+
+        if (getUserError) throw getUserError;
+
+        // Check sufficient balance
+        if (userData.wallet_balance < amount) {
+          toast.error('User has insufficient balance');
+          return;
+        }
+
+        // Update user balance
+        const newBalance = userData.wallet_balance - amount;
         const { error: updateError } = await supabase
           .from('profiles')
-          .update({ 
-            wallet_balance: supabase.raw(`wallet_balance - ${amount}`) 
-          })
+          .update({ wallet_balance: newBalance })
           .eq('id', selectedTransaction.user_id);
 
         if (updateError) throw updateError;
 
+        // Get current global balance
+        const { data: walletData, error: getWalletError } = await supabase
+          .from('admin_wallet')
+          .select('global_balance')
+          .single();
+
+        if (getWalletError) throw getWalletError;
+
         // Update global wallet
+        const newGlobalBalance = (walletData.global_balance || 0) - amount;
         const { error: walletError } = await supabase
           .from('admin_wallet')
-          .update({ 
-            global_balance: supabase.raw(`global_balance - ${amount}`) 
-          })
+          .update({ global_balance: newGlobalBalance })
           .eq('id', adminWallet?.id);
 
         if (walletError) throw walletError;
@@ -207,7 +244,7 @@ export default function WalletManagement() {
               <TrendingUp className="w-8 h-8 text-purple-400" />
             </div>
             <div>
-              <p className="text-sm text-white/80">Personal Wallet</p>
+              <p className="text-sm text-white/80">Personal Wallet (Profit)</p>
               <h3 className="text-3xl font-bold text-white">
                 {formatCurrency(adminWallet?.personal_balance || 0)}
               </h3>
@@ -376,4 +413,4 @@ export default function WalletManagement() {
       </Modal>
     </div>
   );
-            }
+          }
