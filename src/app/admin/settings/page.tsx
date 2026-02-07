@@ -1,208 +1,298 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { useAuth } from '@/hooks/useAuth' // FIXED: useAuth hook use karein
-import { supabase } from '@/lib/supabase'
-import { 
-  ArrowLeft, Settings as SettingsIcon, Save, ShieldAlert, 
-  MessageSquare, Volume2, Music, Image as ImageIcon, QrCode 
-} from 'lucide-react'
-import { toast } from 'sonner'
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Settings as SettingsIcon, Volume2, VolumeX, Music, AlertTriangle } from 'lucide-react';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import { supabase, type SystemSettings } from '@/lib/supabase';
+import toast from 'react-hot-toast';
 
 export default function AdminSettingsPage() {
-  const router = useRouter()
-  // FIXED: isAdmin yahan se destructure karein
-  const { user: admin, loading: authLoading, isAdmin } = useAuth() 
-  const [loading, setLoading] = useState(false)
-  
-  const [settings, setSettings] = useState({
-    id: '1',
-    maintenance_mode: false,
-    chat_enabled: true,
-    sound_enabled: true,
-    music_enabled: false,
-    app_logo: '',
-    upi_id: '', 
-    qr_url: ''  
-  })
+  const router = useRouter();
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [upiId, setUpiId] = useState('');
 
   useEffect(() => {
-    // FIXED: isAdmin logic error solved
-    if (!authLoading) {
-      if (!admin || !isAdmin) {
-        router.push('/login')
-      } else {
-        loadSettings()
-      }
-    }
-  }, [admin, authLoading, isAdmin, router])
+    checkAuth();
+    fetchSettings();
+    fetchAdminUpiId();
+  }, []);
 
-  const loadSettings = async () => {
-    const { data, error } = await supabase.from('system_settings').select('*').eq('id', '1').single()
-    if (data) {
-      setSettings(data)
-    } else if (error) {
-      toast.error('Could not load settings')
-    }
-  }
-
-  const handleSave = async () => {
-    setLoading(true)
+  const checkAuth = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profile?.role !== 'admin') {
+        router.push('/dashboard');
+        return;
+      }
+    } catch (error) {
+      console.error('Auth error:', error);
+      router.push('/login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      setSettings(data);
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      toast.error('Failed to load settings');
+    }
+  };
+
+  const fetchAdminUpiId = async () => {
+    try {
+      const { data } = await supabase
+        .from('admin_wallet')
+        .select('upi_id')
+        .single();
+
+      setUpiId(data?.upi_id || '');
+    } catch (error) {
+      console.error('Error fetching admin UPI:', error);
+    }
+  };
+
+  const updateSetting = async (key: keyof SystemSettings, value: any) => {
+    try {
+      setSaving(true);
+
       const { error } = await supabase
         .from('system_settings')
-        .update({
-          maintenance_mode: settings.maintenance_mode,
-          chat_enabled: settings.chat_enabled,
-          sound_enabled: settings.sound_enabled,
-          music_enabled: settings.music_enabled,
-          upi_id: settings.upi_id,
-          qr_url: settings.qr_url,
-          app_logo: settings.app_logo
-        })
-        .eq('id', '1')
+        .update({ [key]: value, updated_at: new Date().toISOString() })
+        .eq('id', settings!.id);
 
-      if (error) throw error
-      toast.success('System parameters updated!')
-    } catch (err: any) {
-      toast.error(err.message || 'Update failed')
+      if (error) throw error;
+
+      setSettings({ ...settings!, [key]: value });
+      toast.success('Setting updated successfully');
+    } catch (error) {
+      console.error('Error updating setting:', error);
+      toast.error('Failed to update setting');
     } finally {
-      setLoading(false)
+      setSaving(false);
     }
+  };
+
+  const updateAdminUpiId = async () => {
+    try {
+      setSaving(true);
+
+      const { error } = await supabase
+        .from('admin_wallet')
+        .update({ upi_id: upiId })
+        .eq('id', (await supabase.from('admin_wallet').select('id').single()).data?.id);
+
+      if (error) throw error;
+
+      toast.success('Admin UPI ID updated successfully');
+    } catch (error) {
+      console.error('Error updating UPI ID:', error);
+      toast.error('Failed to update UPI ID');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !settings) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="spinner" />
+      </div>
+    );
   }
 
-  if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-luxury-gold">Syncing...</div>
-
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      {/* --- HEADER --- */}
-      <header className="sticky top-0 z-50 bg-black/60 backdrop-blur-xl border-b border-white/5 p-4">
-        <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-all">
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="text-xl font-black uppercase tracking-tighter italic">
-            System <span className="text-luxury-gold">Configuration</span>
+    <div className="min-h-screen p-4">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <Button variant="secondary" onClick={() => router.back()}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <SettingsIcon className="w-6 h-6" />
+            System Settings
           </h1>
         </div>
-      </header>
 
-      <main className="p-4 max-w-2xl mx-auto space-y-6 pb-20">
-        
-        {/* --- CRITICAL CONTROLS --- */}
-        <section className="space-y-3">
-          <h2 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">App Status</h2>
-          <div className="bg-[#111] border border-white/5 rounded-[2rem] p-2">
-            <SettingToggle 
-              icon={<ShieldAlert className="text-red-500" />}
-              title="Maintenance Mode"
-              desc="Lock all users out of the app"
-              checked={settings.maintenance_mode}
-              onChange={(v: boolean) => setSettings({...settings, maintenance_mode: v})}
-              danger
-            />
-            <SettingToggle 
-              icon={<MessageSquare className="text-blue-500" />}
-              title="Global Chat"
-              desc="Enable/Disable support chat"
-              checked={settings.chat_enabled}
-              onChange={(v: boolean) => setSettings({...settings, chat_enabled: v})}
-            />
-          </div>
-        </section>
-
-        {/* --- PAYMENT SETTINGS --- */}
-        <section className="space-y-3">
-          <h2 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Payment Gateway (Manual)</h2>
-          <div className="bg-[#111] border border-white/5 rounded-[2.5rem] p-6 space-y-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">Admin UPI ID</label>
-              <div className="relative">
-                <QrCode className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-gold" size={18} />
-                <input 
-                  type="text"
-                  value={settings.upi_id || ''}
-                  onChange={(e) => setSettings({...settings, upi_id: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-luxury-gold text-sm"
-                  placeholder="e.g. admin@upi"
-                />
+        {/* Maintenance Mode */}
+        <Card className="border-2 border-yellow-500/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-8 h-8 text-yellow-400" />
+              <div>
+                <h3 className="text-lg font-bold text-white">Maintenance Mode</h3>
+                <p className="text-sm text-gray-400">
+                  When enabled, only admins can login. Blocks all user access.
+                </p>
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">QR Image URL</label>
-              <div className="relative">
-                <ImageIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-gold" size={18} />
-                <input 
-                  type="text"
-                  value={settings.qr_url || ''}
-                  onChange={(e) => setSettings({...settings, qr_url: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-luxury-gold text-sm"
-                  placeholder="https://imgur.com/your-qr.png"
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-400">
+                {settings.maintenance_mode ? 'ON' : 'OFF'}
+              </span>
+              <button
+                onClick={() => updateSetting('maintenance_mode', !settings.maintenance_mode)}
+                disabled={saving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  settings.maintenance_mode ? 'bg-yellow-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                    settings.maintenance_mode ? 'translate-x-7' : 'translate-x-1'
+                  }`}
                 />
-              </div>
+              </button>
             </div>
           </div>
-        </section>
+        </Card>
 
-        {/* --- EXPERIENCE --- */}
-        <section className="space-y-3">
-          <h2 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">User Experience</h2>
-          <div className="bg-[#111] border border-white/5 rounded-[2rem] p-2">
-            <SettingToggle 
-              icon={<Volume2 className="text-luxury-gold" />}
-              title="UI Sound Effects"
-              desc="Click and transition sounds"
-              checked={settings.sound_enabled}
-              onChange={(v: boolean) => setSettings({...settings, sound_enabled: v})}
-            />
-            <SettingToggle 
-              icon={<Music className="text-purple-500" />}
-              title="Lobby Music"
-              desc="Atmospheric background music"
-              checked={settings.music_enabled}
-              onChange={(v: boolean) => setSettings({...settings, music_enabled: v})}
-            />
+        {/* Chat Settings */}
+        <Card>
+          <h3 className="text-lg font-bold text-white mb-4">Chat Settings</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+              <div>
+                <p className="font-semibold text-white">Global Chat</p>
+                <p className="text-sm text-gray-400">Enable/disable chat for all users</p>
+              </div>
+              <button
+                onClick={() => updateSetting('chat_enabled', !settings.chat_enabled)}
+                disabled={saving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  settings.chat_enabled ? 'bg-green-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                    settings.chat_enabled ? 'translate-x-7' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
-        </section>
+        </Card>
 
-        {/* --- SAVE BUTTON --- */}
-        <div className="fixed bottom-6 left-0 right-0 px-4 max-w-2xl mx-auto">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={handleSave}
-            disabled={loading}
-            className="w-full py-5 bg-luxury-gold text-black rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-gold-500/20"
-          >
-            {loading ? 'Propagating...' : 'Save Configuration'}
-          </motion.button>
-        </div>
+        {/* Sound Settings */}
+        <Card>
+          <h3 className="text-lg font-bold text-white mb-4">Sound Settings</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+              <div className="flex items-center gap-3">
+                <Volume2 className="w-5 h-5 text-blue-400" />
+                <div>
+                  <p className="font-semibold text-white">Click Sounds</p>
+                  <p className="text-sm text-gray-400">Button tap sound effects</p>
+                </div>
+              </div>
+              <button
+                onClick={() => updateSetting('sound_enabled', !settings.sound_enabled)}
+                disabled={saving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  settings.sound_enabled ? 'bg-green-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                    settings.sound_enabled ? 'translate-x-7' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
 
-      </main>
-    </div>
-  )
-}
+            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
+              <div className="flex items-center gap-3">
+                <Music className="w-5 h-5 text-purple-400" />
+                <div>
+                  <p className="font-semibold text-white">Background Music</p>
+                  <p className="text-sm text-gray-400">App background music loop</p>
+                </div>
+              </div>
+              <button
+                onClick={() => updateSetting('bg_music_enabled', !settings.bg_music_enabled)}
+                disabled={saving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  settings.bg_music_enabled ? 'bg-green-500' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                    settings.bg_music_enabled ? 'translate-x-7' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </Card>
 
-function SettingToggle({ icon, title, desc, checked, onChange, danger }: any) {
-  return (
-    <div className="flex items-center justify-between p-4 hover:bg-white/[0.02] rounded-[1.5rem] transition-colors">
-      <div className="flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-white/5`}>
-          {icon}
-        </div>
-        <div>
-          <h3 className={`text-sm font-bold ${danger && checked ? 'text-red-500' : 'text-white'}`}>{title}</h3>
-          <p className="text-[10px] text-gray-500 font-medium">{desc}</p>
-        </div>
+        {/* Payment Settings */}
+        <Card>
+          <h3 className="text-lg font-bold text-white mb-4">Payment Settings</h3>
+          <div className="space-y-4">
+            <Input
+              label="Admin UPI ID"
+              placeholder="admin@paytm"
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+            />
+            <Button
+              variant="success"
+              onClick={updateAdminUpiId}
+              loading={saving}
+              disabled={!upiId}
+            >
+              Update UPI ID
+            </Button>
+          </div>
+        </Card>
+
+        {/* App Branding */}
+        <Card>
+          <h3 className="text-lg font-bold text-white mb-4">App Branding</h3>
+          <div className="space-y-4">
+            <Input
+              label="App Logo URL"
+              placeholder="https://example.com/logo.png"
+              value={settings.app_logo || ''}
+              onChange={(e) => updateSetting('app_logo', e.target.value)}
+            />
+            <p className="text-sm text-gray-400">
+              Current logo is stored in <code className="bg-white/10 px-2 py-1 rounded">/public/branding/logo.png</code>
+            </p>
+          </div>
+        </Card>
+
+        {/* Info Card */}
+        <Card className="bg-blue-500/20 border border-blue-500/50">
+          <p className="text-blue-400 text-sm">
+            <strong>Note:</strong> Changes to sound and maintenance mode take effect immediately for all users.
+            Users may need to refresh their browser to see some changes.
+          </p>
+        </Card>
       </div>
-      <button 
-        onClick={() => onChange(!checked)}
-        className={`w-12 h-6 rounded-full relative transition-all duration-300 ${checked ? (danger ? 'bg-red-500' : 'bg-luxury-gold') : 'bg-white/10'}`}
-      >
-        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 ${checked ? 'left-7' : 'left-1'}`} />
-      </button>
     </div>
-  )
-            }
-      
