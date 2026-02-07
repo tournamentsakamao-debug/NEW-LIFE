@@ -1,60 +1,65 @@
-import { useState, useEffect } from 'react'
-import { supabase, Tournament } from '@/lib/supabase'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useTournamentStore } from '@/store/tournamentStore'
 
 export function useTournament() {
-  const { tournaments, setTournaments } = useTournamentStore()
+  const { tournaments, setTournaments, updateTournament } = useTournamentStore()
   const [loading, setLoading] = useState(false)
 
+  // 1. Memoized Load function for efficiency
+  const loadTournaments = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('*')
+        .order('status', { ascending: true }) // Upcoming first
+        .order('tournament_date', { ascending: true })
+
+      if (error) throw error
+      if (data) setTournaments(data)
+    } catch (err) {
+      console.error('Fetch error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [setTournaments])
+
+  // 2. Advanced Real-time Subscription
   useEffect(() => {
     loadTournaments()
-    subscribeToTournaments()
-  }, [])
 
-  async function loadTournaments() {
-    setLoading(true)
-    const { data } = await supabase
-      .from('tournaments')
-      .select('*')
-      .order('tournament_date', { ascending: true })
-
-    if (data) {
-      setTournaments(data)
-    }
-    setLoading(false)
-  }
-
-  function subscribeToTournaments() {
     const channel = supabase
-      .channel('tournament-changes')
+      .channel('live-tournament-feed')
       .on('postgres_changes', {
-        event: '*',
+        event: '*', // Listen to INSERT, UPDATE, DELETE
         schema: 'public',
         table: 'tournaments'
       }, (payload) => {
-        loadTournaments()
+        // Luxury Tip: Pura fetch karne ke bajaye sirf changed item update karein
+        if (payload.eventType === 'UPDATE') {
+          updateTournament(payload.new.id, payload.new)
+        } else {
+          loadTournaments() // Re-fetch for new or deleted items
+        }
       })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }
+  }, [loadTournaments, updateTournament])
 
-  async function getTournamentById(id: string) {
-    const { data } = await supabase
-      .from('tournaments')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    return data
+  // 3. Status Filter Helper
+  const getTournamentsByStatus = (status: 'upcoming' | 'live' | 'finished') => {
+    return tournaments.filter(t => t.status === status)
   }
 
   return {
     tournaments,
+    upcomingMatches: getTournamentsByStatus('upcoming'),
+    liveMatches: getTournamentsByStatus('live'),
     loading,
-    getTournamentById,
     refreshTournaments: loadTournaments
   }
 }
