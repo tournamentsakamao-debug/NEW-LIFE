@@ -1,5 +1,8 @@
 'use client'
 
+// 1. Sabse upar ye line add ki hai taaki build error na aaye
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,7 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Plus, Minus, Copy, Wallet, ShieldCheck, Landmark } from 'lucide-react'
 import { format, differenceInSeconds } from 'date-fns'
 import { toast } from 'sonner'
-import { TouchButton } from '@/components/ui/TouchButton' // Using your premium button
+import { TouchButton } from '@/components/ui/TouchButton'
 
 export default function WalletPage() {
   const router = useRouter()
@@ -20,23 +23,24 @@ export default function WalletPage() {
   const [adminUpi, setAdminUpi] = useState('loading...')
   const [amount, setAmount] = useState('')
   const [utr, setUtr] = useState('')
-  const [userUpi, setUserUpi] = useState('') // Requirement: User UPI for withdrawal
+  const [userUpi, setUserUpi] = useState('') 
   const [loading, setLoading] = useState(false)
 
-  // Timers
   const [depTimer, setDepTimer] = useState(0)
   const [withTimer, setWithTimer] = useState(0)
 
-  // Fetch Settings (Admin UPI)
   useEffect(() => {
     async function fetchSettings() {
-      const { data } = await supabase.from('system_settings').select('upi_id').single()
-      if (data?.upi_id) setAdminUpi(data.upi_id)
+      try {
+        const { data } = await supabase.from('system_settings').select('upi_id').single()
+        if (data?.upi_id) setAdminUpi(data.upi_id)
+      } catch (e) {
+        console.error("Settings load failed")
+      }
     }
     fetchSettings()
   }, [])
 
-  // Requirement: Cooldown Logic (5h Deposit / 24h Withdraw)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date()
@@ -59,7 +63,6 @@ export default function WalletPage() {
     return `${h}h ${m}m ${s}s`
   }
 
-  // Handle Deposit (with Anti-Glitch)
   const handleDeposit = async () => {
     if (loading || depTimer > 0) return
     if (!amount || parseFloat(amount) < 10) return toast.error('Min ₹10')
@@ -83,7 +86,6 @@ export default function WalletPage() {
     setLoading(false)
   }
 
-  // Handle Withdrawal
   const handleWithdraw = async () => {
     if (loading || withTimer > 0) return
     if (!amount || parseFloat(amount) < 100) return toast.error('Min ₹100')
@@ -93,7 +95,7 @@ export default function WalletPage() {
     const { error } = await supabase.from('transactions').insert([{
       user_id: user?.id,
       amount: parseFloat(amount),
-      user_upi: userUpi, // Saving User's UPI for Admin to pay
+      user_upi: userUpi,
       type: 'withdraw',
       status: 'pending'
     }])
@@ -108,7 +110,6 @@ export default function WalletPage() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white">
-      {/* Header with logo.png */}
       <div className="p-4 flex items-center justify-between border-b border-white/5 bg-black/50 sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <TouchButton variant="ghost" className="!p-2" onClick={() => router.back()}>
@@ -120,11 +121,10 @@ export default function WalletPage() {
       </div>
 
       <main className="p-6">
-        {/* Luxury Card */}
         <motion.div className="p-8 rounded-[2.5rem] bg-gradient-to-br from-[#D4AF37] to-[#AA8A2E] text-black shadow-2xl mb-8 relative overflow-hidden">
           <div className="relative z-10">
             <p className="text-[10px] uppercase font-black tracking-widest opacity-60">Balance</p>
-            <h2 className="text-5xl font-black italic">₹{balance.toLocaleString()}</h2>
+            <h2 className="text-5xl font-black italic">₹{balance?.toLocaleString() || 0}</h2>
             <div className="flex gap-3 mt-10">
               <TouchButton variant="secondary" className="flex-1 !bg-black !text-white" onClick={() => setModalType('deposit')}>
                 Deposit
@@ -136,32 +136,41 @@ export default function WalletPage() {
           </div>
         </motion.div>
 
-        {/* History Section */}
         <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-4 px-2">Transactions</h3>
         <div className="space-y-3">
-          {transactions.map((txn: any) => (
-            <div key={txn.id} className="p-4 bg-white/5 border border-white/5 rounded-2xl flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${txn.type === 'deposit' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                  {txn.type === 'deposit' ? <Plus size={18}/> : <Landmark size={18}/>}
+          {/* FIXED: Added optional chaining ?. and default empty state */}
+          {transactions?.length > 0 ? (
+            transactions.map((txn: any) => (
+              <div key={txn.id} className="p-4 bg-white/5 border border-white/5 rounded-2xl flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-xl ${txn.type === 'deposit' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                    {txn.type === 'deposit' ? <Plus size={18}/> : <Landmark size={18}/>}
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase text-white italic">{txn.type}</p>
+                    <p className="text-[9px] text-zinc-500 font-bold">
+                      {txn.created_at ? format(new Date(txn.created_at), 'dd MMM, hh:mm a') : '...'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-black uppercase text-white italic">{txn.type}</p>
-                  <p className="text-[9px] text-zinc-500 font-bold">{format(new Date(txn.created_at), 'dd MMM, hh:mm a')}</p>
+                <div className="text-right">
+                  <p className={`text-sm font-black ${txn.type === 'deposit' ? 'text-green-500' : 'text-red-500'}`}>
+                    ₹{txn.amount}
+                  </p>
+                  <span className="text-[8px] font-black uppercase opacity-60">{txn.status}</span>
                 </div>
               </div>
-              <div className="text-right">
-                <p className={`text-sm font-black ${txn.type === 'deposit' ? 'text-green-500' : 'text-red-500'}`}>
-                  ₹{txn.amount}
-                </p>
-                <span className="text-[8px] font-black uppercase opacity-60">{txn.status}</span>
-              </div>
+            ))
+          ) : (
+            <div className="text-center py-10 opacity-30">
+               <Wallet className="mx-auto mb-2" size={24} />
+               <p className="text-[10px] uppercase font-black tracking-widest">No history yet</p>
             </div>
-          ))}
+          )}
         </div>
       </main>
 
-      {/* Dynamic Modal (Deposit / Withdraw) */}
+      {/* Dynamic Modal */}
       <AnimatePresence>
         {modalType !== 'none' && (
           <div className="fixed inset-0 z-[100] flex items-end justify-center">
@@ -201,5 +210,5 @@ export default function WalletPage() {
       </AnimatePresence>
     </div>
   )
-      }
-                    
+        }
+                      
