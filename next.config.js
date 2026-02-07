@@ -1,28 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
-  
-  // Isse build pass ho jayega bina kisi error ke
-  typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
-
   images: {
-    domains: ['pcgzjgfzcyucvwhrldbq.supabase.co'],
-    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
   },
-
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      }
-    }
-    return config
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['*'],
+    },
   },
 }
 
 module.exports = nextConfig
-
