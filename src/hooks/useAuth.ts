@@ -1,8 +1,10 @@
+'use client'
+
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { hashPassword, verifyPassword } from '@/lib/authGuard'
-import { isAdminEmail } from '@/lib/permissions'
+import { isAdminEmail } from '@/lib/permissions' // Ensure this matches your lib file
 import { toast } from 'sonner'
 
 export function useAuth() {
@@ -12,8 +14,14 @@ export function useAuth() {
   // 1. Sync User Session & Real-time Ban Check
   const checkUser = useCallback(async () => {
     try {
-      const userId = localStorage.getItem('userId')
-      if (!userId) return
+      // Get session from Supabase instead of just localStorage for better security
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id || localStorage.getItem('userId')
+      
+      if (!userId) {
+        setLoading(false)
+        return
+      }
 
       const { data, error } = await supabase
         .from('profiles')
@@ -29,7 +37,10 @@ export function useAuth() {
         return
       }
 
-      setUser(data)
+      // Requirement 12: Sync Admin Status
+      const isUserAdmin = data.role === 'admin' || isAdminEmail(data.email)
+      setUser({ ...data, isAdmin: isUserAdmin })
+      
     } catch (err: any) {
       localStorage.removeItem('userId')
     } finally {
@@ -44,12 +55,22 @@ export function useAuth() {
     const userId = localStorage.getItem('userId')
     if (userId) {
       const channel = supabase
-        .channel(`public:profiles:id=eq.${userId}`)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
+        .channel(`profile-updates-${userId}`)
+        .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'profiles',
+          filter: `id=eq.${userId}` 
+        }, (payload) => {
           if (payload.new.is_banned) {
             handleLogout('Security Alert: Account Banned')
           } else {
-            setUser(payload.new as any) // Auto-sync balance & profile
+            // Auto-sync balance & profile
+            const updatedUser = {
+              ...payload.new,
+              isAdmin: payload.new.role === 'admin' || isAdminEmail(payload.new.email)
+            }
+            setUser(updatedUser as any)
           }
         })
         .subscribe()
@@ -60,7 +81,9 @@ export function useAuth() {
 
   const handleLogout = (message?: string) => {
     if (message) toast.error(message)
+    localStorage.removeItem('userId')
     storeLogout()
+    if (typeof window !== 'undefined') window.location.href = '/login'
   }
 
   // 3. Login Logic with Hashing
@@ -74,13 +97,17 @@ export function useAuth() {
 
       if (error || !profile) throw new Error('Invalid credentials')
 
+      // Requirement 15: Verify Hashed Password
       const isValid = await verifyPassword(password, profile.password_hash)
       if (!isValid) throw new Error('Invalid credentials')
 
       if (profile.is_banned) throw new Error('Access Denied: Banned')
 
       localStorage.setItem('userId', profile.id)
-      setUser(profile)
+      
+      const isUserAdmin = profile.role === 'admin' || isAdminEmail(profile.email)
+      setUser({ ...profile, isAdmin: isUserAdmin })
+      
       toast.success(`Welcome back, ${profile.username}!`)
       return { success: true }
     } catch (error: any) {
@@ -94,17 +121,18 @@ export function useAuth() {
     try {
       const passwordHash = await hashPassword(password)
       
-      // Permission logic check
+      // Permission logic check (Requirement 3.1)
       const role = isAdminEmail(email) ? 'admin' : 'user'
 
       const { data, error } = await supabase
         .from('profiles')
         .insert([{
           username,
-          email, // Added for admin verification
+          email,
           password_hash: passwordHash,
           role,
-          wallet_balance: 0
+          wallet_balance: 0,
+          is_banned: false
         }])
         .select()
         .single()
@@ -115,7 +143,7 @@ export function useAuth() {
       }
 
       localStorage.setItem('userId', data.id)
-      setUser(data)
+      setUser({ ...data, isAdmin: role === 'admin' })
       toast.success('Account created successfully!')
       return { success: true }
     } catch (error: any) {
@@ -130,6 +158,7 @@ export function useAuth() {
     login,
     signup,
     logout: handleLogout,
-    isAdmin: user?.role === 'admin'
+    isAdmin: user?.role === 'admin' || (user && isAdminEmail(user.email))
   }
-          }
+      }
+        
