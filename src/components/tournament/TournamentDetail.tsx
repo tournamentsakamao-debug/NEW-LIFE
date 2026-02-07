@@ -1,170 +1,293 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { Tournament, supabase } from '@/lib/supabase'
-import { Modal } from '@/components/ui/Modal'
-import { TouchButton } from '@/components/ui/TouchButton'
-import { Input } from '@/components/ui/Input'
-import { useWallet } from '@/hooks/useWallet'
-import { useAuth } from '@/hooks/useAuth'
-import { Trophy, Users, Map as MapIcon, ShieldCheck, Lock, Gamepad2 } from 'lucide-react'
-import { format } from 'date-fns'
-import { toast } from 'sonner'
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { 
+  Users, Trophy, Calendar, Clock, Lock, Crown, 
+  MapPin, Shield, XCircle, CheckCircle 
+} from 'lucide-react';
+import { formatCurrency, formatDate, formatTime } from '@/lib/utils';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import TextArea from '@/components/ui/TextArea';
+import Modal from '@/components/ui/Modal';
+import type { Tournament } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 interface TournamentDetailProps {
-  tournament: Tournament
-  isOpen: boolean
-  onClose: () => void
+  tournament: Tournament;
+  userId: string;
 }
 
-export function TournamentDetail({ tournament, isOpen, onClose }: TournamentDetailProps) {
-  const { user } = useAuth()
-  const { balance, joinTournament } = useWallet()
-  const [gameUid, setGameUid] = useState('')
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
-  const [occupiedSlots, setOccupiedSlots] = useState<number[]>([])
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+export default function TournamentDetail({ tournament, userId }: TournamentDetailProps) {
+  const router = useRouter();
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joining, setJoining] = useState(false);
 
-  // Requirement 1.7: Fetch already joined slots
-  useEffect(() => {
-    if (isOpen) {
-      fetchOccupiedSlots()
-    }
-  }, [isOpen, tournament.id])
-
-  async function fetchOccupiedSlots() {
-    const { data } = await supabase
-      .from('participants')
-      .select('slot_number')
-      .eq('tournament_id', tournament.id)
-    
-    if (data) setOccupiedSlots(data.map(p => p.slot_number))
-  }
+  // Form states
+  const [gameName, setGameName] = useState('');
+  const [gameUid, setGameUid] = useState('');
+  const [userMessage, setUserMessage] = useState('');
+  const [tournamentPassword, setTournamentPassword] = useState('');
 
   const handleJoin = async () => {
-    if (!selectedSlot) return toast.error('Please select a slot first')
-    if (!gameUid.trim()) return toast.error('Enter your Game UID')
-    
-    setLoading(true)
-    const result = await joinTournament(tournament.id, tournament.join_fee, gameUid, selectedSlot)
-    setLoading(false)
+    try {
+      if (!gameName || !gameUid) {
+        toast.error('Please fill in game name and UID');
+        return;
+      }
 
-    if (result.success) {
-      onClose()
-      setSelectedSlot(null)
+      if (tournament.is_password_protected && !tournamentPassword) {
+        toast.error('Please enter tournament password');
+        return;
+      }
+
+      setJoining(true);
+
+      // Verify password if needed
+      if (tournament.is_password_protected) {
+        if (tournamentPassword !== tournament.tournament_password) {
+          toast.error('Incorrect tournament password');
+          setJoining(false);
+          return;
+        }
+      }
+
+      // Call join function
+      const { data, error } = await supabase.rpc('join_tournament_final', {
+        t_id: tournament.id,
+        u_id: userId,
+        fee: tournament.join_fee,
+        g_name: gameName,
+        g_uid: gameUid,
+        u_msg: userMessage || null,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Successfully joined! Your slot number is ${data}`);
+      setShowJoinModal(false);
+      router.refresh();
+    } catch (error: any) {
+      console.error('Join error:', error);
+      toast.error(error.message || 'Failed to join tournament');
+    } finally {
+      setJoining(false);
     }
-  }
+  };
+
+  const getStatusBadge = () => {
+    const styles = {
+      live: 'status-live',
+      upcoming: 'status-upcoming',
+      finished: 'status-finished',
+      cancelled: 'status-cancelled',
+    };
+
+    return (
+      <div className={`${styles[tournament.status]} px-4 py-2 rounded-full inline-flex items-center gap-2`}>
+        {tournament.status === 'live' && <div className="w-2 h-2 bg-white rounded-full animate-pulse" />}
+        <span className="text-sm font-bold text-white uppercase">{tournament.status}</span>
+      </div>
+    );
+  };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Tournament Briefing">
-      <div className="space-y-6 pb-10">
-        {/* Banner with Map Overlay */}
-        <div className="relative h-52 rounded-[2rem] overflow-hidden border border-white/10">
-          <img src={tournament.banner_detail || tournament.banner_main} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0F0F0F] via-transparent to-transparent" />
-          <div className="absolute bottom-4 left-6">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="bg-luxury-gold text-black text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                {tournament.game_mode}
-              </span>
-              <span className="text-white/60 text-xs font-bold uppercase tracking-widest italic">
-                {tournament.map_name}
-              </span>
+    <div className="space-y-6">
+      {/* Header Card */}
+      <Card luxury={tournament.is_luxury} className="relative">
+        {/* Luxury Badge */}
+        {tournament.is_luxury && (
+          <div className="absolute top-4 right-4">
+            <div className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full">
+              <Crown className="w-5 h-5 text-gray-900" />
+              <span className="text-sm font-bold text-gray-900">LUXURY TOURNAMENT</span>
             </div>
-            <h2 className="text-3xl font-black text-white italic uppercase tracking-tighter italic">
-              {tournament.name}
-            </h2>
           </div>
-        </div>
+        )}
 
-        {/* Quick Stats Grid */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Prize Pool', val: `₹${tournament.prize_money}`, icon: Trophy },
-            { label: 'Entry Fee', val: `₹${tournament.join_fee}`, icon: ShieldCheck },
-            { label: 'Version', val: tournament.version || '3.1', icon: Gamepad2 },
-          ].map((item, i) => (
-            <div key={i} className="bg-white/5 border border-white/5 p-3 rounded-2xl text-center">
-              <item.icon className="w-4 h-4 text-luxury-gold mx-auto mb-1" />
-              <p className="text-[10px] text-gray-500 font-bold uppercase">{item.label}</p>
-              <p className="text-sm font-black text-white">{item.val}</p>
+        {/* Banner */}
+        {tournament.banner_detail && (
+          <div className="relative h-64 -mx-6 -mt-6 mb-6 rounded-t-2xl overflow-hidden">
+            <Image
+              src={tournament.banner_detail}
+              alt={tournament.title}
+              fill
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent" />
+            <div className="absolute bottom-4 left-6">
+              {getStatusBadge()}
             </div>
-          ))}
-        </div>
-
-        {/* Requirement 1.7: Luxury Slot Selection Grid */}
-        <div className="space-y-3">
-          <div className="flex justify-between items-end">
-            <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest">Select Your Slot</h3>
-            <span className="text-[10px] text-luxury-gold font-bold">{tournament.slots_total - occupiedSlots.length} Slots Available</span>
           </div>
-          
-          <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 bg-white/5 p-4 rounded-[2rem] border border-white/5 max-h-60 overflow-y-auto no-scrollbar">
-            {Array.from({ length: tournament.slots_total }).map((_, i) => {
-              const slotNum = i + 1
-              const isOccupied = occupiedSlots.includes(slotNum)
-              const isSelected = selectedSlot === slotNum
+        )}
 
-              return (
-                <button
-                  key={i}
-                  disabled={isOccupied}
-                  onClick={() => setSelectedSlot(slotNum)}
-                  className={`h-10 rounded-lg text-[10px] font-black transition-all border
-                    ${isOccupied ? 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed' : 
-                      isSelected ? 'bg-luxury-gold border-luxury-gold text-black scale-110 shadow-[0_0_15px_rgba(212,175,55,0.4)]' : 
-                      'bg-white/5 border-white/5 text-gray-400 hover:border-luxury-gold/50'}`}
-                >
-                  {slotNum}
-                </button>
-              )
-            })}
+        {/* Title & Game Info */}
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-3xl font-bold gradient-text mb-2">{tournament.title}</h1>
+            <div className="flex items-center gap-3 text-gray-300">
+              <span className="text-lg">{tournament.game_name}</span>
+              <span>•</span>
+              <span className="px-3 py-1 bg-white/10 rounded-full text-sm">{tournament.game_mode}</span>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Slots */}
+            <div className="p-4 bg-white/5 rounded-xl text-center">
+              <Users className="w-8 h-8 text-blue-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Slots</p>
+              <p className="text-2xl font-bold text-white">
+                {tournament.slots_joined}/{tournament.slots_total}
+              </p>
+            </div>
+
+            {/* Entry Fee */}
+            <div className="p-4 bg-white/5 rounded-xl text-center">
+              <Trophy className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Entry Fee</p>
+              <p className="text-2xl font-bold text-white">
+                {tournament.join_fee === 0 ? 'FREE' : formatCurrency(tournament.join_fee)}
+              </p>
+            </div>
+
+            {/* Prize */}
+            <div className="p-4 bg-white/5 rounded-xl text-center">
+              <Trophy className="w-8 h-8 text-green-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Prize Pool</p>
+              <p className="text-2xl font-bold text-white">
+                {formatCurrency(tournament.prize_money)}
+              </p>
+            </div>
+
+            {/* Date & Time */}
+            <div className="p-4 bg-white/5 rounded-xl text-center">
+              <Calendar className="w-8 h-8 text-red-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">Date & Time</p>
+              <p className="text-lg font-bold text-white">
+                {formatDate(tournament.tournament_date)}
+              </p>
+              <p className="text-sm text-gray-400">{formatTime(tournament.tournament_time)}</p>
+            </div>
           </div>
         </div>
+      </Card>
 
-        {/* Form Details */}
-        <div className="space-y-4 bg-white/5 p-6 rounded-[2rem] border border-white/5">
-          <Input 
-            label="Game UID (In-Game ID)" 
-            placeholder="Ex: 512344556" 
-            value={gameUid} 
-            onChange={e => setGameUid(e.target.value)}
+      {/* Game Details Card */}
+      {(tournament.game_id || tournament.game_password) && (
+        <Card>
+          <h2 className="text-xl font-bold mb-4">Game Details</h2>
+          <div className="space-y-3">
+            {tournament.game_id && (
+              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                <span className="text-gray-400">Game ID</span>
+                <span className="font-mono text-white">{tournament.game_id}</span>
+              </div>
+            )}
+            {tournament.game_password && (
+              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                <span className="text-gray-400">Game Password</span>
+                <span className="font-mono text-white">{tournament.game_password}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Rules Card */}
+      {tournament.rules && (
+        <Card>
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Shield className="w-6 h-6 text-blue-400" />
+            Tournament Rules
+          </h2>
+          <div className="prose prose-invert max-w-none">
+            <p className="text-gray-300 whitespace-pre-wrap">{tournament.rules}</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Join Button */}
+      {tournament.status === 'upcoming' && tournament.slots_joined < tournament.slots_total && (
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          onClick={() => setShowJoinModal(true)}
+        >
+          Join Tournament - {tournament.join_fee === 0 ? 'FREE' : formatCurrency(tournament.join_fee)}
+        </Button>
+      )}
+
+      {tournament.slots_joined >= tournament.slots_total && (
+        <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-center">
+          <XCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+          <p className="text-red-400 font-semibold">Tournament Full</p>
+        </div>
+      )}
+
+      {/* Join Modal */}
+      <Modal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+        title="Join Tournament"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Game Name *"
+            placeholder="Enter your in-game name"
+            value={gameName}
+            onChange={(e) => setGameName(e.target.value)}
           />
-          
-          {tournament.password && (
-            <Input 
+
+          <Input
+            label="Game UID *"
+            placeholder="Enter your game UID"
+            value={gameUid}
+            onChange={(e) => setGameUid(e.target.value)}
+          />
+
+          <TextArea
+            label="Message to Admin (Optional)"
+            placeholder="Any message for the admin? (Max 5 lines)"
+            rows={5}
+            maxLength={500}
+            value={userMessage}
+            onChange={(e) => setUserMessage(e.target.value)}
+          />
+
+          {tournament.is_password_protected && (
+            <Input
+              label="Tournament Password *"
               type="password"
-              label="Secret Match Password" 
-              placeholder="Enter Access Key" 
-              icon={<Lock className="w-4 h-4" />}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+              placeholder="Enter tournament password"
+              value={tournamentPassword}
+              onChange={(e) => setTournamentPassword(e.target.value)}
             />
           )}
 
-          <div className="flex justify-between items-center py-2">
-            <div>
-              <p className="text-[10px] text-gray-500 font-black uppercase">Wallet Balance</p>
-              <p className="text-white font-black">₹{balance}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-gray-500 font-black uppercase">Cost to Join</p>
-              <p className="text-luxury-gold font-black">₹{tournament.join_fee}</p>
-            </div>
+          <div className="p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-xl">
+            <p className="text-yellow-400 text-sm">
+              Entry fee of {formatCurrency(tournament.join_fee)} will be deducted from your wallet
+            </p>
           </div>
 
-          <TouchButton 
-            variant="luxury" 
-            fullWidth 
-            disabled={loading || !selectedSlot || balance < tournament.join_fee}
+          <Button
+            variant="success"
+            size="lg"
+            className="w-full"
             onClick={handleJoin}
+            loading={joining}
           >
-            {balance < tournament.join_fee ? 'Insufficient Balance' : 
-             !selectedSlot ? 'Select a Slot' : `Confirm Slot ${selectedSlot}`}
-          </TouchButton>
+            Confirm & Join
+          </Button>
         </div>
-      </div>
-    </Modal>
-  )
-                  }
+      </Modal>
+    </div>
+  );
+      }
