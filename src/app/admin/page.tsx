@@ -3,18 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/hooks/useAuth' // Updated hook use kar rahe hain
 import { supabase } from '@/lib/supabase'
 import { 
   Users, Trophy, Wallet, MessageSquare, Settings, 
   TrendingUp, LogOut, ShieldAlert, BarChart3, 
-  Activity, Zap, Lock, RefreshCcw, Camera, Bell
+  Activity, Zap, Lock, RefreshCcw, Camera, Bell,
+  Eye // <--- FIXED: Eye icon import add kar diya
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function AdminPage() {
   const router = useRouter()
-  const { user, loading, logout } = useAuthStore()
+  const { user, loading: authLoading, isAdmin, logout } = useAuth()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [sysSettings, setSysSettings] = useState<any>(null)
   
@@ -28,38 +29,38 @@ export default function AdminPage() {
     adminNetProfit: 0 
   })
 
-  // Sound Logic (Requirement 13)
+  // Sound Logic
   const playClick = () => {
-    const audio = document.getElementById('click-sound') as HTMLAudioElement
-    if (audio) { audio.currentTime = 0; audio.play().catch(() => {}) }
+    const audio = new Audio('/sounds/click.mp3') // Direct play to avoid element-id issues
+    audio.play().catch(() => {})
   }
 
   useEffect(() => {
-    if (!loading && (!user || user.role !== 'admin')) {
-      router.push('/login')
-    } else if (user) {
-      loadStats()
-      fetchSystemSettings()
+    if (!authLoading) {
+      if (!user || !isAdmin) {
+        router.push('/login')
+      } else {
+        loadStats()
+        fetchSystemSettings()
+      }
     }
-  }, [user, loading, router])
+  }, [user, authLoading, isAdmin, router])
 
   const fetchSystemSettings = async () => {
-    const { data } = await supabase.from('system_settings').select('*').eq('id', '1').single()
+    const { data } = await supabase.from('system_settings').select('*').eq('id', 1).single()
     if (data) setSysSettings(data)
   }
 
   const loadStats = async () => {
     setIsRefreshing(true)
     try {
-      // 1. Fetch Basic Counts
       const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
       const { count: tours } = await supabase.from('tournaments').select('*', { count: 'exact', head: true })
       
-      // 2. Fetch Pending Requests
       const { data: pendDep } = await supabase.from('transactions').select('id').eq('type', 'deposit').eq('status', 'pending')
       const { data: pendWith } = await supabase.from('transactions').select('id').eq('type', 'withdraw').eq('status', 'pending')
       
-      // 3. --- DOUBLE WALLET LOGIC (SQL View Based) ---
+      // Treasury Calculation
       const { data: finance } = await supabase.from('admin_finance').select('*').single()
 
       setStats({
@@ -72,7 +73,7 @@ export default function AdminPage() {
         adminNetProfit: finance?.admin_personal_wallet || 0
       })
     } catch (err) {
-      toast.error("Failed to sync treasury")
+      console.error("Treasury Sync Error:", err)
     } finally {
       setIsRefreshing(false)
     }
@@ -84,7 +85,7 @@ export default function AdminPage() {
     const { error } = await supabase
       .from('system_settings')
       .update({ maintenance_mode: !currentStatus })
-      .eq('id', '1')
+      .eq('id', 1)
     
     if (!error) {
       toast.success(`Maintenance ${!currentStatus ? 'Activated' : 'Deactivated'}`)
@@ -92,14 +93,14 @@ export default function AdminPage() {
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-12 h-12 border-4 border-luxury-gold/20 border-t-luxury-gold rounded-full animate-spin" /></div>
+  if (authLoading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-12 h-12 border-4 border-[#D4AF37]/20 border-t-[#D4AF37] rounded-full animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pb-24">
       {/* --- ADMIN HEADER --- */}
       <header className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl border-b border-white/5 p-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#D4AF37] to-[#AA8A2E] flex items-center justify-center shadow-lg shadow-gold-500/20">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#D4AF37] to-[#AA8A2E] flex items-center justify-center shadow-lg shadow-[#D4AF37]/20">
             <ShieldAlert className="text-black" size={26} />
           </div>
           <div>
@@ -121,7 +122,6 @@ export default function AdminPage() {
         
         {/* --- DOUBLE WALLET TREASURY --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-          {/* Admin Net Profit Card */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="p-8 rounded-[2.5rem] bg-gradient-to-br from-[#D4AF37] to-[#AA8A2E] text-black relative overflow-hidden shadow-2xl"
@@ -139,7 +139,6 @@ export default function AdminPage() {
             </div>
           </motion.div>
 
-          {/* Global User Balance Card */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             className="p-8 rounded-[2.5rem] bg-[#111] border border-white/10 relative overflow-hidden"
@@ -155,14 +154,14 @@ export default function AdminPage() {
 
         {/* --- PENDING ACTIONS ALERTS --- */}
         <div className="grid grid-cols-2 gap-6 mb-12">
-            <button onClick={() => router.push('/admin/transactions')} className="bg-yellow-500/5 border border-yellow-500/10 hover:border-yellow-500/40 transition-all rounded-[2rem] p-8 text-center group">
+            <button onClick={() => { playClick(); router.push('/admin/transactions'); }} className="bg-yellow-500/5 border border-yellow-500/10 hover:border-yellow-500/40 transition-all rounded-[2rem] p-8 text-center group">
                 <p className="text-[10px] text-yellow-500 font-black uppercase mb-2 tracking-[0.2em]">Pending Deposits</p>
                 <h3 className="text-5xl font-black italic tracking-tighter">{stats.pendingDeposits}</h3>
                 <div className="mt-4 inline-flex items-center gap-2 text-[9px] font-black text-white/40 uppercase group-hover:text-yellow-500">
                     Review UTRs <Eye size={12} />
                 </div>
             </button>
-            <button onClick={() => router.push('/admin/transactions')} className="bg-red-500/5 border border-red-500/10 hover:border-red-500/40 transition-all rounded-[2rem] p-8 text-center group">
+            <button onClick={() => { playClick(); router.push('/admin/transactions'); }} className="bg-red-500/5 border border-red-500/10 hover:border-red-500/40 transition-all rounded-[2rem] p-8 text-center group">
                 <p className="text-[10px] text-red-500 font-black uppercase mb-2 tracking-[0.2em]">Withdrawal Requests</p>
                 <h3 className="text-5xl font-black italic text-red-500 tracking-tighter">{stats.pendingWithdrawals}</h3>
                 <div className="mt-4 inline-flex items-center gap-2 text-[9px] font-black text-white/40 uppercase group-hover:text-red-500">
@@ -207,18 +206,6 @@ export default function AdminPage() {
   )
 }
 
-function StatCard({ icon, label, value, color }: any) {
-  return (
-    <div className="bg-[#111] border border-white/5 p-6 rounded-[2rem] flex flex-col gap-4">
-      <div className={`p-4 rounded-2xl bg-white/5 w-fit ${color || 'text-[#D4AF37]'}`}>{icon}</div>
-      <div>
-        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest">{label}</p>
-        <p className="text-3xl font-black italic">{value}</p>
-      </div>
-    </div>
-  )
-}
-
 function AdminAction({ icon, title, desc, onClick, warning }: any) {
   return (
     <button 
@@ -236,18 +223,5 @@ function AdminAction({ icon, title, desc, onClick, warning }: any) {
       </div>
     </button>
   )
-}
-
-function TouchButton({ children, variant, className, onClick }: any) {
-    return (
-        <button 
-            onClick={onClick}
-            className={`py-4 px-8 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 ${
-                variant === 'danger' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'bg-white/10 text-white border border-white/10'
-            } ${className}`}
-        >
-            {children}
-        </button>
-    )
-        }
-                  
+  }
+            
