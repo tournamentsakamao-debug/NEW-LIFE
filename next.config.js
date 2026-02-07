@@ -1,16 +1,13 @@
 /** @type {import('next').NextConfig} */
+// 1. Adapter ko import karein
+const { setupDevPlatform } = require('@cloudflare/next-on-pages/next-config');
+
 const nextConfig = {
   reactStrictMode: true,
-
-  // 1. Isse TypeScript ke errors build nahi rokenge
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-
-  // 2. Isse ESLint ke errors build nahi rokenge
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  
+  // TypeScript errors ignore karne ke liye (Build success ke liye zaruri)
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
 
   images: {
     domains: ['pcgzjgfzcyucvwhrldbq.supabase.co'],
