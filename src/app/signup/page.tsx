@@ -53,13 +53,20 @@ export default function SignupPage() {
         return;
       }
 
-      // Create auth user
+      // Create auth user with metadata
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
         password: password,
+        options: {
+          data: {
+            username: username, // Pass username to trigger
+          },
+          emailRedirectTo: undefined, // Disable email confirmation
+        },
       });
 
       if (authError) {
+        console.error('Auth error:', authError);
         toast.error(authError.message);
         return;
       }
@@ -69,27 +76,44 @@ export default function SignupPage() {
         return;
       }
 
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          username: username,
-          email: email,
-          role: 'user',
-          wallet_balance: 0,
-        });
+      // Wait a bit for trigger to create profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      if (profileError) {
-        toast.error('Failed to create profile');
-        return;
+      // Verify profile was created
+      const { data: profileCheck, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profileCheck) {
+        console.error('Profile check error:', profileError);
+        
+        // If profile wasn't auto-created, create it manually
+        const { error: manualCreateError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            username: username,
+            email: email,
+            role: email === 'tournamentsakamao@gmail.com' ? 'admin' : 'user',
+            wallet_balance: 0,
+          });
+
+        if (manualCreateError) {
+          console.error('Manual profile creation error:', manualCreateError);
+          toast.error('Account created but profile setup failed. Please contact support.');
+          return;
+        }
       }
 
       toast.success('Account created successfully! Please login.');
       router.push('/login');
+      return true;
     } catch (error: any) {
       console.error('Signup error:', error);
       toast.error('Signup failed. Please try again.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -184,4 +208,4 @@ export default function SignupPage() {
       </div>
     </div>
   );
-                }
+}
